@@ -39,6 +39,9 @@ export default defineConfig({
             outDir: 'dist-electron',
             rollupOptions: {
               external: ['electron'],
+              // Electron 28+ requires ESM preload scripts to use the .mjs
+              // extension; main.ts loads `preload.mjs` accordingly.
+              output: { entryFileNames: 'preload.mjs' },
             },
           },
         },

@@ -1,0 +1,37 @@
+import { AlertTriangle, CircleCheck } from 'lucide-react';
+import { useProjectStore } from '@/app/store/useProjectStore';
+
+/** Bottom status bar: project metrics, critical-path summary and warnings. */
+export function StatusBar() {
+  const derived = useProjectStore((s) => s.derived);
+  const selectedCount = useProjectStore((s) => s.selectedTaskIds.size);
+  const dirty = useProjectStore((s) => s.dirty);
+
+  const taskCount = derived.project.tasks.length;
+  const criticalCount = derived.criticalPath.length;
+  const cyclic = derived.cyclicTaskIds.length;
+
+  return (
+    <div className="flex items-center gap-4 border-t border-border bg-surface-2 px-3 py-1 text-2xs text-content-muted">
+      <span>작업 {taskCount.toLocaleString()}개</span>
+      <span>의존성 {derived.project.dependencies.length.toLocaleString()}개</span>
+      <span>크리티컬 {criticalCount}개</span>
+      <span>기간 {derived.projectDuration}일</span>
+      {derived.projectFinish && <span>완료 예상 {derived.projectFinish}</span>}
+      {selectedCount > 0 && <span className="text-accent">선택 {selectedCount}개</span>}
+
+      <div className="ml-auto flex items-center gap-3">
+        {cyclic > 0 ? (
+          <span className="flex items-center gap-1 text-critical">
+            <AlertTriangle size={12} /> 순환 의존성 {cyclic}개
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-emerald-500">
+            <CircleCheck size={12} /> 정상
+          </span>
+        )}
+        <span>{dirty ? '저장되지 않음' : '저장됨'}</span>
+      </div>
+    </div>
+  );
+}
