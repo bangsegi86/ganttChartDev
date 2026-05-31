@@ -25,6 +25,8 @@ export interface GanttRenderModel {
   baseline: Map<TaskId, BaselineEntry> | null;
   /** First view-group color for each task (group color overrides priority color). */
   taskGroupColor: Map<TaskId, string>;
+  /** Live drag preview: which task is being dragged and by how many days. */
+  dragPreview: { taskId: TaskId; deltaDays: number; mode: string } | null;
 }
 
 /** Geometry of a rendered bar; cached for hit-testing. */
@@ -165,7 +167,7 @@ function drawBar(
   scrollLeft: number,
   scrollTop: number,
 ): BarRect | null {
-  const { timeline, palette, schedules, selected, showCritical, baseline, showBaseline, taskGroupColor } = model;
+  const { timeline, palette, schedules, selected, showCritical, baseline, showBaseline, taskGroupColor, dragPreview } = model;
   const t = row.task;
   const y = row.index * ROW_HEIGHT - scrollTop;
   const x = timeline.xFor(t.start) - scrollLeft;
@@ -237,6 +239,23 @@ function drawBar(
     ctx.font = '11px ui-sans-serif, system-ui';
     ctx.textBaseline = 'middle';
     ctx.fillText(t.name, x + w + 6, y + ROW_HEIGHT / 2, 240);
+  }
+
+  // Delta label while dragging: "+3일" badge centred on the bar.
+  if (!isSummary && dragPreview?.taskId === t.id && dragPreview.deltaDays !== 0) {
+    const sign = dragPreview.deltaDays > 0 ? '+' : '';
+    const badge = `${sign}${dragPreview.deltaDays}일`;
+    ctx.font = 'bold 10px ui-sans-serif, system-ui';
+    const bw = Math.min(w - 4, ctx.measureText(badge).width + 10);
+    const bx = x + w / 2 - bw / 2;
+    const by = barY + 1;
+    const bh = BAR_HEIGHT - 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    roundRect(ctx, bx, by, bw, bh, 3);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(badge, bx + bw / 2 - ctx.measureText(badge).width / 2, by + bh / 2);
   }
 
   if (selected.has(t.id)) strokeSelection(ctx, x, barY, w, BAR_HEIGHT, palette);

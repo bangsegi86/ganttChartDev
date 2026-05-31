@@ -67,6 +67,7 @@ export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
     showBaseline,
     baseline,
     taskGroupColor: buildTaskGroupColor(project),
+    dragPreview: null,
   };
 
   // Background.

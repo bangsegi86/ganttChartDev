@@ -42,15 +42,15 @@ const NO_DRAG: DragState = {
 };
 
 interface GanttChartProps {
-  /** Synced vertical scroll position shared with the grid. */
   scrollTop: number;
   onScrollTopChange: (top: number) => void;
 }
 
 /**
- * Canvas-based gantt timeline. Renders only the visible viewport for
- * performance, syncs vertical scroll with the data grid, and handles bar
- * move/resize, dependency linking, panning and ctrl-wheel zoom.
+ * Canvas-based gantt timeline. Handles bar move/resize/link/pan with full
+ * cursor feedback, a live date-tooltip during drag, an undo toast on commit,
+ * and blocks dragging of summary (parent) bars whose dates auto-derive from
+ * their children.
  */
 export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -59,6 +59,11 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const barsRef = useRef<BarRect[]>([]);
   const dragRef = useRef<DragState>(NO_DRAG);
   const spaceHeldRef = useRef(false);
+
+  // DOM refs for imperative tooltip + toast (avoids React state churning).
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const toastRef = useRef<HTMLDivElement>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const derived = useProjectStore((s) => s.derived);
   const view = useProjectStore((s) => s.view);
@@ -80,7 +85,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     const map = new Map<TaskId, string>();
     for (const g of project.viewGroups) {
       for (const tid of g.taskIds) {
-        if (!map.has(tid)) map.set(tid, g.color); // first group wins
+        if (!map.has(tid)) map.set(tid, g.color);
       }
     }
     return map;
@@ -93,7 +98,73 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     return new Map(b.entries.map((e) => [e.taskId, e]));
   }, [project.activeBaselineId, project.baselines]);
 
-  /** Build the immutable render model, applying any live drag preview. */
+  // --------------------------------------------------------------------------
+  // Imperative helpers (DOM direct, no re-render)
+  // --------------------------------------------------------------------------
+
+  const setDomCursor = useCallback((cur: string) => {
+    if (scrollerRef.current) scrollerRef.current.style.cursor = cur;
+  }, []);
+
+  /** Show/update the floating date tooltip near the cursor. */
+  const showTooltip = useCallback((drag: DragState) => {
+    const el = tooltipRef.current;
+    if (!el || !drag.taskId || drag.deltaDays === 0) {
+      if (el) el.style.display = 'none';
+      return;
+    }
+    const task = useProjectStore.getState().derived.project.tasks.find((t) => t.id === drag.taskId);
+    if (!task) { el.style.display = 'none'; return; }
+
+    let line1 = '';
+    let line2 = '';
+    const sign = drag.deltaDays > 0 ? '+' : '';
+    if (drag.mode === 'move') {
+      const ns = addDaysISO(task.start, drag.deltaDays);
+      const ne = addDaysISO(task.end, drag.deltaDays);
+      line1 = `${ns} ~ ${ne}`;
+      line2 = `${sign}${drag.deltaDays}일`;
+    } else if (drag.mode === 'resize-start') {
+      line1 = `시작: ${addDaysISO(task.start, drag.deltaDays)}`;
+      line2 = `${sign}${drag.deltaDays}일`;
+    } else if (drag.mode === 'resize-end') {
+      line1 = `종료: ${addDaysISO(task.end, drag.deltaDays)}`;
+      line2 = `${sign}${drag.deltaDays}일`;
+    }
+
+    el.innerHTML = `<span>${line1}</span><span class="opacity-60 ml-2">${line2}</span>`;
+    el.style.left = `${drag.cursorX + 16}px`;
+    el.style.top = `${Math.max(4, drag.cursorY - 42)}px`;
+    el.style.display = 'flex';
+  }, []);
+
+  const hideTooltip = useCallback(() => {
+    if (tooltipRef.current) tooltipRef.current.style.display = 'none';
+  }, []);
+
+  /** Briefly show an "undo hint" banner at the bottom of the panel. */
+  const showToast = useCallback((msg: string) => {
+    const el = toastRef.current;
+    if (!el) return;
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    el.textContent = msg;
+    el.style.opacity = '1';
+    el.style.transform = 'translateY(0)';
+    el.style.display = 'block';
+    toastTimerRef.current = setTimeout(() => {
+      if (!toastRef.current) return;
+      toastRef.current.style.opacity = '0';
+      toastRef.current.style.transform = 'translateY(6px)';
+      toastTimerRef.current = setTimeout(() => {
+        if (toastRef.current) toastRef.current.style.display = 'none';
+      }, 300);
+    }, 2500);
+  }, []);
+
+  // --------------------------------------------------------------------------
+  // Render model + draw
+  // --------------------------------------------------------------------------
+
   const buildModel = useCallback((): GanttRenderModel => {
     const palette = readPalette(view.theme);
     const drag = dragRef.current;
@@ -104,6 +175,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         return { ...r, task: applyDragPreview(r.task, drag) };
       });
     }
+    const isMoving = (drag.mode === 'move' || drag.mode === 'resize-start' || drag.mode === 'resize-end')
+      && drag.taskId != null && drag.deltaDays !== 0;
     return {
       rows: renderRows,
       timeline,
@@ -120,10 +193,12 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       showBaseline: view.showBaseline,
       baseline: baselineMap,
       taskGroupColor,
+      dragPreview: isMoving
+        ? { taskId: drag.taskId!, deltaDays: drag.deltaDays, mode: drag.mode! }
+        : null,
     };
   }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected, view, baselineMap, taskGroupColor]);
 
-  /** Repaint header + body for the current scroll position. */
   const draw = useCallback(() => {
     const scroller = scrollerRef.current;
     const body = bodyCanvasRef.current;
@@ -136,7 +211,6 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     const sl = scroller.scrollLeft;
     const st = scroller.scrollTop;
 
-    // Size + pin the body canvas to the viewport.
     setCanvasSize(body, vw, vh, dpr);
     body.style.transform = `translate(${sl}px, ${st}px)`;
     const bctx = body.getContext('2d')!;
@@ -144,13 +218,12 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     const model = buildModel();
     barsRef.current = renderGanttBody(bctx, model, vw, vh, sl, st);
 
-    // Header.
     setCanvasSize(header, vw, HEADER_HEIGHT, dpr);
     const hctx = header.getContext('2d')!;
     hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     renderGanttHeader(hctx, model, vw, HEADER_HEIGHT, sl);
 
-    // Live link-drag rubber-band line.
+    // Rubber-band line while linking.
     const drag = dragRef.current;
     if (drag.mode === 'link' && drag.taskId) {
       const fromBar = barsRef.current.find((b) => b.taskId === drag.taskId);
@@ -167,12 +240,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     }
   }, [buildModel]);
 
-  // Redraw whenever inputs change.
-  useEffect(() => {
-    draw();
-  }, [draw, scrollTop]);
+  useEffect(() => { draw(); }, [draw, scrollTop]);
 
-  // Keep canvas crisp on container resize.
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
@@ -181,21 +250,24 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     return () => ro.disconnect();
   }, [draw]);
 
-  // Track Space for pan mode.
+  // Space = pan mode; update cursor immediately on press/release.
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !isTextTarget(e.target)) spaceHeldRef.current = true;
+      if (e.code === 'Space' && !isTextTarget(e.target)) {
+        spaceHeldRef.current = true;
+        if (!dragRef.current.mode) setDomCursor('grab');
+      }
     };
     const up = (e: KeyboardEvent) => {
-      if (e.code === 'Space') spaceHeldRef.current = false;
+      if (e.code === 'Space') {
+        spaceHeldRef.current = false;
+        if (!dragRef.current.mode) setDomCursor('default');
+      }
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
-    return () => {
-      window.removeEventListener('keydown', down);
-      window.removeEventListener('keyup', up);
-    };
-  }, []);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  }, [setDomCursor]);
 
   const handleScroll = useCallback(() => {
     const scroller = scrollerRef.current;
@@ -204,7 +276,6 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     draw();
   }, [draw, onScrollTopChange]);
 
-  // External vertical scroll (from the grid) → apply to our scroller.
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (scroller && Math.abs(scroller.scrollTop - scrollTop) > 0.5) {
@@ -213,7 +284,9 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     }
   }, [scrollTop, draw]);
 
-  // --- pointer interactions --------------------------------------------------
+  // --------------------------------------------------------------------------
+  // Hit-test
+  // --------------------------------------------------------------------------
 
   const hitTest = (clientX: number, clientY: number): { bar: BarRect | null; edge: DragMode } => {
     const scroller = scrollerRef.current!;
@@ -230,6 +303,30 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     return { bar: null, edge: null };
   };
 
+  // --------------------------------------------------------------------------
+  // Hover cursor (fires on every mousemove while not dragging)
+  // --------------------------------------------------------------------------
+
+  const onMouseMoveHover = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (dragRef.current.mode) return; // cursor managed by active drag
+    if (spaceHeldRef.current) { setDomCursor('grab'); return; }
+    const { bar, edge } = hitTest(e.clientX, e.clientY);
+    if (!bar) {
+      setDomCursor('default');
+    } else if (bar.isSummary) {
+      // Summary bars are read-only — their dates roll up from children.
+      setDomCursor('default');
+    } else if (edge === 'resize-start' || edge === 'resize-end') {
+      setDomCursor('ew-resize');
+    } else {
+      setDomCursor('grab');
+    }
+  }, [setDomCursor]);
+
+  // --------------------------------------------------------------------------
+  // Mouse down / drag / up
+  // --------------------------------------------------------------------------
+
   const onMouseDown = (e: React.MouseEvent) => {
     const scroller = scrollerRef.current!;
     const store = useProjectStore.getState();
@@ -244,19 +341,22 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         startScrollLeft: scroller.scrollLeft,
         startScrollTop: scroller.scrollTop,
       };
+      setDomCursor('grabbing');
       e.preventDefault();
       return;
     }
 
     const { bar, edge } = hitTest(e.clientX, e.clientY);
-    if (!bar) {
-      store.clearSelection();
-      return;
-    }
+    if (!bar) { store.clearSelection(); return; }
+
     store.selectTask(bar.taskId, e.ctrlKey || e.metaKey);
 
-    // Alt-drag from a bar starts a dependency link.
+    // Summary bars can only be selected; their dates are auto-calculated.
+    if (bar.isSummary && !e.altKey) return;
+
     const mode: DragMode = e.altKey ? 'link' : edge;
+    if (!mode) return;
+
     const rect = scroller.getBoundingClientRect();
     dragRef.current = {
       mode,
@@ -269,7 +369,16 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       cursorX: e.clientX - rect.left,
       cursorY: e.clientY - rect.top,
     };
-    if (mode === 'link') store.beginLink(bar.taskId);
+
+    if (mode === 'link') {
+      store.beginLink(bar.taskId);
+      setDomCursor('crosshair');
+    } else if (mode === 'move') {
+      setDomCursor('grabbing');
+    } else {
+      setDomCursor('ew-resize');
+    }
+
     window.addEventListener('mousemove', onWindowMove);
     window.addEventListener('mouseup', onWindowUp);
   };
@@ -289,40 +398,60 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         return;
       }
 
-      const dx = e.clientX - drag.startClientX;
-      drag.deltaDays = Math.round(dx / timeline.dayWidth);
+      const prevDelta = drag.deltaDays;
+      drag.deltaDays = Math.round((e.clientX - drag.startClientX) / timeline.dayWidth);
       drag.cursorX = e.clientX - rect.left;
       drag.cursorY = e.clientY - rect.top;
-      draw();
+
+      // Clamp resize-start so the bar can't shrink below 1 day.
+      if (drag.mode === 'resize-start') {
+        const task = useProjectStore.getState().derived.project.tasks.find((t) => t.id === drag.taskId);
+        if (task) {
+          const maxDelta = task.durationDays - 1;
+          drag.deltaDays = Math.min(drag.deltaDays, maxDelta);
+        }
+      }
+
+      if (drag.deltaDays !== prevDelta) draw();
+      showTooltip(drag);
     },
-    [draw, timeline.dayWidth, onScrollTopChange],
+    [draw, timeline.dayWidth, onScrollTopChange, showTooltip],
   );
 
   const onWindowUp = useCallback(
     (e: MouseEvent) => {
       const drag = dragRef.current;
       const store = useProjectStore.getState();
+
+      hideTooltip();
+      setDomCursor('default');
+
       if (drag.mode && drag.taskId) {
         if (drag.mode === 'move' && drag.deltaDays !== 0) {
           store.moveTaskBy(drag.taskId, drag.deltaDays);
+          showToast('이동됨 · Ctrl+Z로 되돌리기');
         } else if (drag.mode === 'resize-start' && drag.deltaDays !== 0) {
           store.resizeTask(drag.taskId, 'start', drag.deltaDays);
+          showToast('시작일 변경됨 · Ctrl+Z로 되돌리기');
         } else if (drag.mode === 'resize-end' && drag.deltaDays !== 0) {
           store.resizeTask(drag.taskId, 'end', drag.deltaDays);
+          showToast('종료일 변경됨 · Ctrl+Z로 되돌리기');
         } else if (drag.mode === 'link') {
           const { bar } = hitTest(e.clientX, e.clientY);
           if (bar && bar.taskId !== drag.taskId) {
-            store.addDependency(drag.taskId, bar.taskId, 'FS');
+            const ok = store.addDependency(drag.taskId, bar.taskId, 'FS');
+            if (ok) showToast('의존성 추가됨 · Ctrl+Z로 되돌리기');
           }
           store.beginLink(null);
         }
       }
+
       dragRef.current = NO_DRAG;
       window.removeEventListener('mousemove', onWindowMove);
       window.removeEventListener('mouseup', onWindowUp);
       draw();
     },
-    [draw, onWindowMove],
+    [draw, onWindowMove, hideTooltip, showToast, setDomCursor],
   );
 
   const onDoubleClick = (e: React.MouseEvent) => {
@@ -330,7 +459,6 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     if (bar) useProjectStore.getState().setInspecting(bar.taskId);
   };
 
-  // Ctrl+wheel zoom centred on the cursor's date.
   const onWheel = (e: React.WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
@@ -340,18 +468,21 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const contentHeight = rows.length * ROW_HEIGHT;
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col bg-surface">
-      <div className="relative" style={{ height: HEADER_HEIGHT }}>
+    <div className="relative flex h-full min-w-0 flex-1 flex-col bg-surface">
+      {/* Fixed header band */}
+      <div className="relative shrink-0" style={{ height: HEADER_HEIGHT }}>
         <canvas ref={headerCanvasRef} className="block h-full w-full" />
       </div>
+
+      {/* Scrolling body */}
       <div
         ref={scrollerRef}
         className="relative flex-1 overflow-auto"
         onScroll={handleScroll}
         onWheel={onWheel}
         onMouseDown={onMouseDown}
+        onMouseMove={onMouseMoveHover}
         onDoubleClick={onDoubleClick}
-        style={{ cursor: spaceHeldRef.current ? 'grab' : 'default' }}
         role="application"
         aria-label="간트 타임라인"
       >
@@ -361,12 +492,33 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
           className="pointer-events-none absolute left-0 top-0"
           style={{ willChange: 'transform' }}
         />
+
+        {/* Link-drag hint */}
         {linkSourceId && (
           <div className="pointer-events-none absolute left-2 top-2 rounded bg-accent px-2 py-1 text-2xs text-accent-fg">
-            연결할 대상 작업으로 드래그하세요
+            연결할 대상 작업으로 드래그하세요 (Alt+드래그)
           </div>
         )}
+
+        {/* Drag date tooltip — updated via imperative DOM (no re-render) */}
+        <div
+          ref={tooltipRef}
+          className="pointer-events-none absolute z-20 flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-xs shadow-lg text-content"
+          style={{ display: 'none', whiteSpace: 'nowrap' }}
+        />
       </div>
+
+      {/* Undo toast — slides up from the bottom of the panel */}
+      <div
+        ref={toastRef}
+        className="pointer-events-none absolute bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full border border-border bg-surface-2 px-4 py-1.5 text-xs font-medium text-content shadow-xl"
+        style={{
+          display: 'none',
+          opacity: 0,
+          transform: 'translateY(6px)',
+          transition: 'opacity 0.2s ease, transform 0.2s ease',
+        }}
+      />
     </div>
   );
 }
