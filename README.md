@@ -4,6 +4,14 @@
 Electron + React + TypeScript(strict) 기반이며, 대규모 일정(작업 10,000개+/의존성 30,000개+)에서도
 가상화 렌더링으로 부드럽게 동작하도록 설계했습니다.
 
+### 화면
+
+| 간트 (다크) | 간트 (라이트) | 리소스 업무량 |
+| --- | --- | --- |
+| ![다크 테마 간트차트](screenshots/01-gantt-dark.png) | ![라이트 테마 간트차트](screenshots/02-gantt-light.png) | ![리소스 업무량 뷰](screenshots/03-resources-light.png) |
+
+> 빨간 막대 = 크리티컬 패스, 다이아몬드 = 마일스톤, 빨간 점선 = 오늘, 연한 음영 = 주말/공휴일.
+
 ---
 
 ## 핵심 기능

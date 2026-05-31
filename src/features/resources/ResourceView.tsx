@@ -16,7 +16,7 @@ export function ResourceView() {
   );
 
   return (
-    <div className="h-full overflow-auto bg-surface p-4">
+    <div className="h-full w-full flex-1 overflow-auto bg-surface p-4">
       <h2 className="mb-3 text-sm font-semibold text-content">리소스 업무량</h2>
       {project.resources.length === 0 && (
         <p className="text-xs text-content-muted">담당자를 먼저 등록하세요.</p>
@@ -43,19 +43,22 @@ export function ResourceView() {
                   )}
                 </div>
               </div>
-              <div className="flex h-20 items-end gap-0.5 overflow-x-auto">
+              <div className="flex h-24 items-stretch gap-1 overflow-x-auto pb-1">
                 {w.weeks.map((wk) => {
                   const heightPct = (wk.hours / maxWeekly) * 100;
                   const over = wk.overloadedDays > 0;
                   return (
                     <div
                       key={wk.weekStart}
-                      className="group relative flex w-3 shrink-0 flex-col justify-end"
+                      className="group relative flex h-full w-5 shrink-0 flex-col justify-end"
                       title={`${wk.weekStart} · ${Math.round(wk.hours)}h${over ? ` · 과부하 ${wk.overloadedDays}일` : ''}`}
                     >
+                      <span className="mb-0.5 text-center text-[9px] text-content-muted">
+                        {Math.round(wk.hours)}
+                      </span>
                       <div
                         className={over ? 'bg-critical' : 'bg-accent'}
-                        style={{ height: `${Math.max(2, heightPct)}%`, borderRadius: '2px 2px 0 0' }}
+                        style={{ height: `${Math.max(3, heightPct)}%`, borderRadius: '3px 3px 0 0' }}
                       />
                     </div>
                   );
