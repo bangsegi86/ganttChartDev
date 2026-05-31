@@ -13,12 +13,14 @@ import { HolidayManager } from '@/features/dialogs/HolidayManager';
 import { ResourceManager } from '@/features/dialogs/ResourceManager';
 import { CalendarSettings } from '@/features/dialogs/CalendarSettings';
 import { BaselineManager } from '@/features/dialogs/BaselineManager';
+import { ViewGroupManager } from '@/features/dialogs/ViewGroupManager';
 import { TaskInspector } from '@/features/dialogs/TaskInspector';
+import { ViewFilterBanner } from '@/features/view/ViewFilterBanner';
 import { createDemoProject } from '@/data/sampleData';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
 import { Button } from '@/shared/ui/Button';
 
-type DialogKind = 'holidays' | 'resources' | 'calendar' | 'baselines' | null;
+type DialogKind = 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | null;
 
 /**
  * Application shell. Wires the toolbar, split-pane grid+gantt (or resource
@@ -66,6 +68,7 @@ export default function App() {
         onOpenResources={() => setDialog('resources')}
         onOpenCalendar={() => setDialog('calendar')}
         onOpenBaselines={() => setDialog('baselines')}
+        onOpenViewGroups={() => setDialog('viewGroups')}
       />
 
       {recovery && (
@@ -79,6 +82,8 @@ export default function App() {
           </Button>
         </div>
       )}
+
+      <ViewFilterBanner onManageGroups={() => setDialog('viewGroups')} />
 
       <div className="flex min-h-0 flex-1">
         {activeView === 'resources' ? (
@@ -100,6 +105,7 @@ export default function App() {
       <ResourceManager open={dialog === 'resources'} onClose={() => setDialog(null)} />
       <CalendarSettings open={dialog === 'calendar'} onClose={() => setDialog(null)} />
       <BaselineManager open={dialog === 'baselines'} onClose={() => setDialog(null)} />
+      <ViewGroupManager open={dialog === 'viewGroups'} onClose={() => setDialog(null)} />
       <TaskInspector />
     </div>
   );

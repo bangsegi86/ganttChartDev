@@ -41,6 +41,7 @@ function makeProject(tasks: Task[], dependencies: Project['dependencies']): Proj
     holidays: generateKoreanHolidays(2025, 2025),
     baselines: [],
     activeBaselineId: null,
+    viewGroups: [],
   };
 }
 

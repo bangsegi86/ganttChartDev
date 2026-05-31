@@ -21,7 +21,8 @@ export interface DerivedSchedule {
  */
 export function recalc(input: Project): DerivedSchedule {
   const { tasks, cyclicTaskIds } = scheduleProject(input);
-  const project: Project = { ...input, tasks };
+  // Normalise optional fields that may be absent on older saved documents.
+  const project: Project = { ...input, tasks, viewGroups: input.viewGroups ?? [] };
   const cpm = computeCriticalPath(tasks, project.dependencies);
   const projectFinish = maxISO(tasks.map((t) => t.end));
   return {

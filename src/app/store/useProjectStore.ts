@@ -11,6 +11,7 @@ import type {
   TaskId,
   WorkCalendar,
 } from '@/entities';
+import type { FilterMode } from '@/features/view/viewFilter';
 import { recalc, type DerivedSchedule } from './recalc';
 import { wouldCreateCycle } from '@/services/dependency/graph';
 import { autosaveRepository, projectRepository } from '@/services/persistence/projectRepository';
@@ -32,6 +33,12 @@ interface ViewState {
   /** Left grid pane width in pixels (resizable split). */
   gridWidth: number;
   activeView: ActiveView;
+  /** Display filter: show all tasks, a view group, or a focused selection. */
+  filterMode: FilterMode;
+  /** Active view group id when `filterMode === 'group'`. */
+  filterGroupId: string | null;
+  /** Snapshot of task ids shown when `filterMode === 'focus'`. */
+  focusIds: TaskId[];
 }
 
 interface ClipboardState {
@@ -94,6 +101,14 @@ interface ProjectStore {
   setActiveBaseline: (id: string | null) => void;
   removeBaseline: (id: string) => void;
 
+  // --- view groups (보기 그룹) ---
+  createViewGroup: (name: string, taskIds?: TaskId[]) => string;
+  renameViewGroup: (id: string, name: string) => void;
+  setViewGroupColor: (id: string, color: string) => void;
+  removeViewGroup: (id: string) => void;
+  addTasksToGroup: (groupId: string, taskIds: TaskId[]) => void;
+  removeTasksFromGroup: (groupId: string, taskIds: TaskId[]) => void;
+
   // --- history ops ---
   undo: () => void;
   redo: () => void;
@@ -114,6 +129,9 @@ interface ProjectStore {
   toggleBaseline: () => void;
   setGridWidth: (width: number) => void;
   setActiveView: (view: ActiveView) => void;
+  /** Show all tasks, a specific view group, or the current selection only. */
+  setViewFilter: (mode: FilterMode, groupId?: string | null) => void;
+  clearViewFilter: () => void;
 }
 
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -134,6 +152,7 @@ function emptyProject(): Project {
     holidays: [],
     baselines: [],
     activeBaselineId: null,
+    viewGroups: [],
   };
 }
 
@@ -182,18 +201,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       showBaseline: false,
       gridWidth: 460,
       activeView: 'gantt',
+      filterMode: 'all',
+      filterGroupId: null,
+      focusIds: [],
     },
 
     loadProject(project) {
       const derived = recalc(project);
-      set({
+      set((s) => ({
         derived,
         project: derived.project,
         past: [],
         future: [],
         selectedTaskIds: new Set(),
         dirty: false,
-      });
+        // Groups belong to the loaded document; reset any stale filter.
+        view: { ...s.view, filterMode: 'all', filterGroupId: null, focusIds: [] },
+      }));
     },
 
     async saveProject() {
@@ -516,6 +540,60 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       });
     },
 
+    // --- view groups (보기 그룹) ---
+    createViewGroup(name, taskIds = []) {
+      const id = nanoid(8);
+      const color = GROUP_COLORS[get().derived.project.viewGroups.length % GROUP_COLORS.length]!;
+      commit((d) => {
+        d.viewGroups.push({ id, name: name.trim() || `그룹 ${d.viewGroups.length + 1}`, color, taskIds: [...new Set(taskIds)] });
+      });
+      return id;
+    },
+
+    renameViewGroup(id, name) {
+      commit((d) => {
+        const g = d.viewGroups.find((x) => x.id === id);
+        if (g) g.name = name.trim() || g.name;
+      });
+    },
+
+    setViewGroupColor(id, color) {
+      commit((d) => {
+        const g = d.viewGroups.find((x) => x.id === id);
+        if (g) g.color = color;
+      });
+    },
+
+    removeViewGroup(id) {
+      commit((d) => {
+        d.viewGroups = d.viewGroups.filter((g) => g.id !== id);
+      });
+      // Drop the filter if it pointed at the removed group.
+      set((s) =>
+        s.view.filterGroupId === id
+          ? { view: { ...s.view, filterMode: 'all', filterGroupId: null } }
+          : {},
+      );
+    },
+
+    addTasksToGroup(groupId, taskIds) {
+      commit((d) => {
+        const g = d.viewGroups.find((x) => x.id === groupId);
+        if (!g) return;
+        const set = new Set(g.taskIds);
+        for (const id of taskIds) set.add(id);
+        g.taskIds = [...set];
+      });
+    },
+
+    removeTasksFromGroup(groupId, taskIds) {
+      const drop = new Set(taskIds);
+      commit((d) => {
+        const g = d.viewGroups.find((x) => x.id === groupId);
+        if (g) g.taskIds = g.taskIds.filter((t) => !drop.has(t));
+      });
+    },
+
     // --- history ---
     undo() {
       const { past, derived, future } = get();
@@ -596,8 +674,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     setActiveView(activeView) {
       set((s) => ({ view: { ...s.view, activeView } }));
     },
+    setViewFilter(mode, groupId = null) {
+      set((s) => {
+        // "focus" snapshots the current selection so later clicks don't churn it.
+        const focusIds = mode === 'focus' ? [...s.selectedTaskIds] : s.view.focusIds;
+        // Ignore a focus request with nothing selected.
+        if (mode === 'focus' && focusIds.length === 0) return {};
+        return { view: { ...s.view, filterMode: mode, filterGroupId: mode === 'group' ? groupId : null, focusIds } };
+      });
+    },
+    clearViewFilter() {
+      set((s) => ({ view: { ...s.view, filterMode: 'all', filterGroupId: null } }));
+    },
   };
 });
+
+/** Default chip colours assigned to new view groups, cycled in order. */
+const GROUP_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
 
 /** Re-pack sibling `order` values into clean 0..n integers. */
 function normaliseOrders(tasks: Task[]): void {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
+import { useVisibleTasks } from '@/features/view/viewFilter';
 import { buildTimeline } from './timeline';
 import { ZOOM_CONFIGS } from './zoom';
 import { readPalette } from './colors';
@@ -67,11 +68,12 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const project = derived.project;
   const zoom = ZOOM_CONFIGS[view.zoom];
 
-  const rows = useMemo(() => buildVisibleRows(project.tasks), [project.tasks]);
+  const visibleTasks = useVisibleTasks();
+  const rows = useMemo(() => buildVisibleRows(visibleTasks), [visibleTasks]);
   const rowIndex = useMemo(() => rowIndexMap(rows), [rows]);
   const timeline = useMemo(
-    () => buildTimeline(project.tasks, project.startDate, zoom.dayWidth),
-    [project.tasks, project.startDate, zoom.dayWidth],
+    () => buildTimeline(visibleTasks, project.startDate, zoom.dayWidth),
+    [visibleTasks, project.startDate, zoom.dayWidth],
   );
 
   const baselineMap = useMemo<Map<TaskId, BaselineEntry> | null>(() => {

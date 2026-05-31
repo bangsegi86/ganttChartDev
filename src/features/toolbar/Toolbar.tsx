@@ -7,6 +7,7 @@ import {
   FlagTriangleRight,
   Image,
   Indent,
+  Layers,
   Moon,
   Outdent,
   Plus,
@@ -40,6 +41,7 @@ interface ToolbarProps {
   onOpenResources: () => void;
   onOpenCalendar: () => void;
   onOpenBaselines: () => void;
+  onOpenViewGroups: () => void;
 }
 
 /** Top command bar. Groups document, edit, view and export actions. */
@@ -48,8 +50,12 @@ export function Toolbar({
   onOpenResources,
   onOpenCalendar,
   onOpenBaselines,
+  onOpenViewGroups,
 }: ToolbarProps) {
   const view = useProjectStore((s) => s.view);
+  const viewGroups = useProjectStore((s) => s.derived.project.viewGroups);
+  const setViewFilter = useProjectStore((s) => s.setViewFilter);
+  const selectedCountForFilter = useProjectStore((s) => s.selectedTaskIds.size);
   const past = useProjectStore((s) => s.past.length);
   const future = useProjectStore((s) => s.future.length);
   const selectedCount = useProjectStore((s) => s.selectedTaskIds.size);
@@ -166,6 +172,40 @@ export function Toolbar({
         </Button>
         <Button size="sm" onClick={() => setActiveView('calendar')} active={view.activeView === 'calendar'}>
           달력
+        </Button>
+      </Group>
+
+      <Divider />
+
+      <Group>
+        <select
+          value={view.filterMode === 'group' ? `group:${view.filterGroupId}` : view.filterMode}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === 'all') setViewFilter('all');
+            else if (v === 'focus') setViewFilter('focus');
+            else if (v.startsWith('group:')) setViewFilter('group', v.slice(6));
+          }}
+          className="h-7 max-w-[150px] rounded-md border border-border bg-surface px-1 text-xs text-content"
+          aria-label="보기 필터"
+          title="표시할 작업 필터"
+        >
+          <option value="all">전체 보기</option>
+          <option value="focus" disabled={selectedCountForFilter === 0}>
+            선택 항목만{selectedCountForFilter > 0 ? ` (${selectedCountForFilter})` : ''}
+          </option>
+          {viewGroups.length > 0 && (
+            <optgroup label="보기 그룹">
+              {viewGroups.map((g) => (
+                <option key={g.id} value={`group:${g.id}`}>
+                  {g.name} ({g.taskIds.length})
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        <Button size="sm" onClick={onOpenViewGroups} title="보기 그룹 관리">
+          <Layers size={14} /> 그룹
         </Button>
       </Group>
 

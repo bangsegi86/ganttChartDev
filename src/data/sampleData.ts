@@ -186,6 +186,10 @@ export function createDemoProject(): Project {
     holidays: generateKoreanHolidays(2025, 2027),
     baselines: [],
     activeBaselineId: null,
+    viewGroups: [
+      { id: 'vg-dev', name: '개발 작업', color: '#10b981', taskIds: ['dev-1', 'dev-2', 'dev-3'] },
+      { id: 'vg-milestones', name: '주요 마일스톤', color: '#8b5cf6', taskIds: ['m-kickoff', 'm-release'] },
+    ],
   };
 
   const { tasks: scheduled } = scheduleProject(base);
@@ -246,6 +250,7 @@ export function createLargeProject(phaseCount = 200, tasksPerPhase = 50): Projec
     holidays: generateKoreanHolidays(2025, 2030),
     baselines: [] as Baseline[],
     activeBaselineId: null,
+    viewGroups: [],
   };
   const { tasks: scheduled } = scheduleProject(base);
   return { ...base, tasks: scheduled };

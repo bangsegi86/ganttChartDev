@@ -39,6 +39,7 @@ function project(tasks: Task[]): Project {
     holidays: [],
     baselines: [],
     activeBaselineId: null,
+    viewGroups: [],
   };
 }
 

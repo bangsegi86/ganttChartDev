@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Diamond } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
+import { useVisibleTasks } from '@/features/view/viewFilter';
 import { HEADER_HEIGHT, ROW_HEIGHT } from '@/features/gantt/layout';
 import { cn } from '@/shared/ui/cn';
 import type { Priority, Task } from '@/entities';
@@ -46,7 +47,6 @@ interface DataGridProps {
  * multi-select, column resizing, a name filter and column sort.
  */
 export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps) {
-  const project = useProjectStore((s) => s.derived.project);
   const schedules = useProjectStore((s) => s.derived.schedules);
   const selected = useProjectStore((s) => s.selectedTaskIds);
   const showCritical = useProjectStore((s) => s.view.showCriticalPath);
@@ -72,7 +72,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const [filter, setFilter] = useState('');
   const [sort, setSort] = useState<SortKey>('none');
 
-  const allRows = useMemo(() => buildVisibleRows(project.tasks), [project.tasks]);
+  const visibleTasks = useVisibleTasks();
+  const allRows = useMemo(() => buildVisibleRows(visibleTasks), [visibleTasks]);
 
   // Apply filter/sort to a *flat* view (sorting flattens the hierarchy display).
   const rows = useMemo(() => {

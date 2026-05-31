@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Diamond } from 'lucide-react';
-import { useProjectStore } from '@/app/store/useProjectStore';
+import { useVisibleTasks } from '@/features/view/viewFilter';
 import { todayISO } from '@/shared/date/dateUtils';
 import { cn } from '@/shared/ui/cn';
 import type { Task } from '@/entities';
@@ -36,7 +36,7 @@ export function CalendarMonthView() {
   const today = todayISO();
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth() + 1);
-  const tasks = useProjectStore((s) => s.derived.project.tasks);
+  const tasks = useVisibleTasks();
 
   const cells = useMemo(() => buildCells(year, month), [year, month]);
 
