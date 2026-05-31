@@ -74,6 +74,8 @@ interface ProjectStore {
   duplicateSelected: () => void;
   copySelected: () => void;
   paste: () => void;
+  /** Bulk-import tasks from clipboard TSV text (e.g. copied from Excel). */
+  importTsvTasks: (text: string) => void;
 
   // --- dependencies ---
   addDependency: (fromId: TaskId, toId: TaskId, type?: DependencyType) => boolean;
@@ -370,6 +372,52 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           d.tasks.push(copy);
         }
         normaliseOrders(d.tasks);
+      });
+      set({ selectedTaskIds: new Set(newIds) });
+    },
+
+    importTsvTasks(text) {
+      const rows = text
+        .replace(/\r/g, '')
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => l.split('\t').map((c) => c.trim()));
+      if (rows.length === 0) return;
+      const newIds: TaskId[] = [];
+      commit((d) => {
+        const baseOrder = d.tasks.length;
+        rows.forEach((cols, i) => {
+          const [rawName, rawStart, rawEnd, rawProgress] = cols;
+          const name = (rawName || '새 작업').slice(0, 200);
+          const validISO = (s: string | undefined) => s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+          const startDate = validISO(rawStart) ? rawStart! : d.startDate;
+          const endDate = validISO(rawEnd) && rawEnd! >= startDate ? rawEnd! : startDate;
+          const progress = rawProgress
+            ? Math.min(100, Math.max(0, parseInt(rawProgress, 10) || 0))
+            : 0;
+          const id = nanoid(10);
+          newIds.push(id);
+          d.tasks.push({
+            id,
+            parentId: null,
+            name,
+            start: startDate,
+            end: endDate,
+            durationDays: Math.max(1, diffDaysISO(startDate, endDate) + 1),
+            progress,
+            priority: 'medium',
+            assigneeIds: [],
+            notes: '',
+            isMilestone: false,
+            collapsed: false,
+            constraint: 'asap',
+            constraintDate: null,
+            manuallyScheduled: !!(validISO(rawStart) && validISO(rawEnd)),
+            order: baseOrder + i,
+            color: null,
+          });
+        });
       });
       set({ selectedTaskIds: new Set(newIds) });
     },

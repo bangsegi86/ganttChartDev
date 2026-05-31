@@ -7,6 +7,7 @@ import { StatusBar } from '@/features/statusbar/StatusBar';
 import { DataGrid } from '@/features/grid/DataGrid';
 import { GanttChart } from '@/features/gantt/GanttChart';
 import { ResourceView } from '@/features/resources/ResourceView';
+import { CalendarMonthView } from '@/features/calendar/CalendarMonthView';
 import { SplitDivider } from '@/shared/ui/SplitDivider';
 import { HolidayManager } from '@/features/dialogs/HolidayManager';
 import { ResourceManager } from '@/features/dialogs/ResourceManager';
@@ -82,6 +83,8 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         {activeView === 'resources' ? (
           <ResourceView />
+        ) : activeView === 'calendar' ? (
+          <CalendarMonthView />
         ) : (
           <>
             <DataGrid width={gridWidth} scrollTop={scrollTop} onScrollTopChange={setScrollTop} />

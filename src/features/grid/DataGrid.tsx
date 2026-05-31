@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Diamond } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
@@ -54,6 +54,18 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const toggleCollapse = useProjectStore((s) => s.toggleCollapse);
   const indentTask = useProjectStore((s) => s.indentTask);
   const outdentTask = useProjectStore((s) => s.outdentTask);
+  const importTsvTasks = useProjectStore((s) => s.importTsvTasks);
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLDivElement>) => {
+      if ((e.target as HTMLElement).tagName === 'INPUT') return;
+      const text = e.clipboardData.getData('text');
+      if (!text.trim()) return;
+      e.preventDefault();
+      importTsvTasks(text);
+    },
+    [importTsvTasks],
+  );
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
@@ -112,7 +124,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   };
 
   return (
-    <div className="flex h-full flex-col border-r border-border bg-surface" style={{ width }}>
+    <div className="flex h-full flex-col border-r border-border bg-surface" style={{ width }} onPaste={handlePaste}>
       {/* Filter row */}
       <div className="flex items-center gap-2 border-b border-border px-2" style={{ height: 28 }}>
         <input

@@ -164,6 +164,9 @@ export function Toolbar({
         <Button size="sm" onClick={() => setActiveView('resources')} active={view.activeView === 'resources'}>
           리소스
         </Button>
+        <Button size="sm" onClick={() => setActiveView('calendar')} active={view.activeView === 'calendar'}>
+          달력
+        </Button>
       </Group>
 
       <Divider />
