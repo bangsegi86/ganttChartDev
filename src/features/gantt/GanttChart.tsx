@@ -76,6 +76,16 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     [visibleTasks, project.startDate, zoom.dayWidth],
   );
 
+  const taskGroupColor = useMemo<Map<TaskId, string>>(() => {
+    const map = new Map<TaskId, string>();
+    for (const g of project.viewGroups) {
+      for (const tid of g.taskIds) {
+        if (!map.has(tid)) map.set(tid, g.color); // first group wins
+      }
+    }
+    return map;
+  }, [project.viewGroups]);
+
   const baselineMap = useMemo<Map<TaskId, BaselineEntry> | null>(() => {
     if (!project.activeBaselineId) return null;
     const b = project.baselines.find((x) => x.id === project.activeBaselineId);
@@ -109,8 +119,9 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       showCritical: view.showCriticalPath,
       showBaseline: view.showBaseline,
       baseline: baselineMap,
+      taskGroupColor,
     };
-  }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected, view, baselineMap]);
+  }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected, view, baselineMap, taskGroupColor]);
 
   /** Repaint header + body for the current scroll position. */
   const draw = useCallback(() => {

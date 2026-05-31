@@ -8,6 +8,7 @@ import { DataGrid } from '@/features/grid/DataGrid';
 import { GanttChart } from '@/features/gantt/GanttChart';
 import { ResourceView } from '@/features/resources/ResourceView';
 import { CalendarMonthView } from '@/features/calendar/CalendarMonthView';
+import { GroupSummaryView } from '@/features/groups/GroupSummaryView';
 import { SplitDivider } from '@/shared/ui/SplitDivider';
 import { HolidayManager } from '@/features/dialogs/HolidayManager';
 import { ResourceManager } from '@/features/dialogs/ResourceManager';
@@ -90,6 +91,8 @@ export default function App() {
           <ResourceView />
         ) : activeView === 'calendar' ? (
           <CalendarMonthView />
+        ) : activeView === 'groups' ? (
+          <GroupSummaryView />
         ) : (
           <>
             <DataGrid width={gridWidth} scrollTop={scrollTop} onScrollTopChange={setScrollTop} />

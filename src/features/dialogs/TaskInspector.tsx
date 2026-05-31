@@ -94,6 +94,30 @@ export function TaskInspector() {
           </Field>
         </div>
 
+        <Field label="막대 색상">
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={task.color ?? '#3b82f6'}
+              onChange={(e) => updateTask(task.id, { color: e.target.value })}
+              className="h-8 w-12 cursor-pointer rounded border border-border bg-transparent p-0.5"
+              aria-label="막대 색상 선택"
+            />
+            {task.color && (
+              <button
+                onClick={() => updateTask(task.id, { color: null })}
+                className="rounded border border-border px-2 py-1 text-2xs text-content-muted hover:bg-surface-2"
+                title="기본 색상 사용"
+              >
+                기본값으로
+              </button>
+            )}
+            <span className="text-2xs text-content-muted">
+              {task.color ? task.color : '기본값 (우선순위/그룹 색상)'}
+            </span>
+          </div>
+        </Field>
+
         <Field label="제약 조건">
           <div className="flex gap-2">
             <select

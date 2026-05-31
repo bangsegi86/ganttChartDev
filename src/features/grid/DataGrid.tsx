@@ -220,6 +220,7 @@ function GridRow({
     .map((id) => project.resources.find((r) => r.id === id)?.name)
     .filter(Boolean)
     .join(', ');
+  const taskGroups = project.viewGroups.filter((g) => g.taskIds.includes(task.id));
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Tab') {
@@ -272,6 +273,13 @@ function GridRow({
                 </span>
               )}
               <GridCell task={task} field="name" className={cn(hasChildren && 'font-semibold')} />
+              {taskGroups.length > 0 && (
+                <div className="ml-1 flex shrink-0 gap-0.5" title={taskGroups.map((g) => g.name).join(', ')}>
+                  {taskGroups.slice(0, 4).map((g) => (
+                    <span key={g.id} className="h-2 w-2 rounded-full" style={{ background: g.color }} />
+                  ))}
+                </div>
+              )}
             </div>
           ) : col.key === 'wbs' ? (
             <span className="text-content-muted">{wbs}</span>

@@ -173,6 +173,9 @@ export function Toolbar({
         <Button size="sm" onClick={() => setActiveView('calendar')} active={view.activeView === 'calendar'}>
           달력
         </Button>
+        <Button size="sm" onClick={() => setActiveView('groups')} active={view.activeView === 'groups'}>
+          그룹 요약
+        </Button>
       </Group>
 
       <Divider />

@@ -66,6 +66,7 @@ export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
     showCritical,
     showBaseline,
     baseline,
+    taskGroupColor: buildTaskGroupColor(project),
   };
 
   // Background.
@@ -120,6 +121,16 @@ function drawNameColumn(
   ctx.moveTo(NAME_COL_WIDTH - 0.5, 0);
   ctx.lineTo(NAME_COL_WIDTH - 0.5, totalH);
   ctx.stroke();
+}
+
+function buildTaskGroupColor(project: Project): Map<TaskId, string> {
+  const map = new Map<TaskId, string>();
+  for (const g of project.viewGroups) {
+    for (const tid of g.taskIds) {
+      if (!map.has(tid)) map.set(tid, g.color);
+    }
+  }
+  return map;
 }
 
 function activeBaselineMap(project: Project): Map<TaskId, BaselineEntry> | null {

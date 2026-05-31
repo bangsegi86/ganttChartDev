@@ -23,7 +23,7 @@ const HISTORY_LIMIT = 100; // ≥100 undo steps as required.
 const AUTOSAVE_INTERVAL_MS = 60_000; // 1-minute autosave.
 
 export type ThemeMode = 'light' | 'dark';
-export type ActiveView = 'gantt' | 'resources' | 'calendar';
+export type ActiveView = 'gantt' | 'resources' | 'calendar' | 'groups';
 
 interface ViewState {
   theme: ThemeMode;

@@ -23,6 +23,8 @@ export interface GanttRenderModel {
   showCritical: boolean;
   showBaseline: boolean;
   baseline: Map<TaskId, BaselineEntry> | null;
+  /** First view-group color for each task (group color overrides priority color). */
+  taskGroupColor: Map<TaskId, string>;
 }
 
 /** Geometry of a rendered bar; cached for hit-testing. */
@@ -163,7 +165,7 @@ function drawBar(
   scrollLeft: number,
   scrollTop: number,
 ): BarRect | null {
-  const { timeline, palette, schedules, selected, showCritical, baseline, showBaseline } = model;
+  const { timeline, palette, schedules, selected, showCritical, baseline, showBaseline, taskGroupColor } = model;
   const t = row.task;
   const y = row.index * ROW_HEIGHT - scrollTop;
   const x = timeline.xFor(t.start) - scrollLeft;
@@ -207,7 +209,7 @@ function drawBar(
     ctx.fillRect(x, barY, 3, BAR_HEIGHT);
     ctx.fillRect(x + w - 3, barY, 3, BAR_HEIGHT);
   } else {
-    const base = t.color ?? (critical ? palette.critical : PRIORITY_COLORS[t.priority]);
+    const base = t.color ?? taskGroupColor.get(t.id) ?? (critical ? palette.critical : PRIORITY_COLORS[t.priority]);
     roundRect(ctx, x, barY, w, BAR_HEIGHT, 4);
     ctx.fillStyle = base;
     ctx.fill();
