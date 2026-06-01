@@ -145,7 +145,14 @@ export function computeCriticalPath(
       lateFinish: lf,
       totalFloat,
       freeFloat,
-      isCritical: totalFloat <= 0,
+      // A task is critical only when it has zero float AND participates in at
+      // least one dependency link. Isolated tasks always have float = 0 when
+      // they share the same max duration, but labelling them critical with no
+      // connections is misleading and confusing for users.
+      isCritical:
+        totalFloat <= 0 &&
+        ((adj.predecessors.get(id)?.length ?? 0) > 0 ||
+          (adj.successors.get(id)?.length ?? 0) > 0),
     });
   }
 

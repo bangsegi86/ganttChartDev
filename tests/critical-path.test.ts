@@ -64,9 +64,11 @@ describe('computeCriticalPath', () => {
   it('handles independent tasks with no links', () => {
     const tasks = [task('A', 3), task('B', 1)];
     const result = computeCriticalPath(tasks, []);
-    // Longest task defines duration; shorter one carries float.
+    // Longest task defines the project duration but isolated tasks are never
+    // marked critical — they have no dependency connections, so labelling
+    // them critical would be misleading.
     expect(result.projectDuration).toBe(3);
-    expect(result.schedules.get('A')!.isCritical).toBe(true);
+    expect(result.schedules.get('A')!.isCritical).toBe(false);
     expect(result.schedules.get('B')!.totalFloat).toBe(2);
   });
 });
