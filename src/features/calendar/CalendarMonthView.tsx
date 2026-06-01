@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Diamond } from 'lucide-react';
 import { useVisibleTasks } from '@/features/view/viewFilter';
+import { useProjectStore } from '@/app/store/useProjectStore';
 import { todayISO } from '@/shared/date/dateUtils';
 import { cn } from '@/shared/ui/cn';
+import { Modal } from '@/shared/ui/Modal';
 import type { Task } from '@/entities';
 
 const DOW_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
@@ -20,11 +22,16 @@ function buildCells(year: number, month: number): (string | null)[] {
   return cells;
 }
 
-/** Returns up to `limit` tasks visible on a given ISO date, plus an overflow count. */
-function tasksForDay(date: string, tasks: Task[], limit: number): { visible: Task[]; overflow: number } {
+/** All tasks (milestones first) active on a given ISO date. */
+function allTasksForDay(date: string, tasks: Task[]): Task[] {
   const matching = tasks.filter((t) => !t.isMilestone && t.start <= date && t.end >= date);
   const milestones = tasks.filter((t) => t.isMilestone && t.start === date);
-  const all = [...milestones, ...matching];
+  return [...milestones, ...matching];
+}
+
+/** Returns up to `limit` tasks visible on a given ISO date, plus an overflow count. */
+function tasksForDay(date: string, tasks: Task[], limit: number): { visible: Task[]; overflow: number } {
+  const all = allTasksForDay(date, tasks);
   return { visible: all.slice(0, limit), overflow: Math.max(0, all.length - limit) };
 }
 
@@ -36,7 +43,14 @@ export function CalendarMonthView() {
   const today = todayISO();
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth() + 1);
+  const [popupDate, setPopupDate] = useState<string | null>(null);
   const tasks = useVisibleTasks();
+  const setInspecting = useProjectStore((s) => s.setInspecting);
+
+  const popupTasks = useMemo(
+    () => (popupDate ? allTasksForDay(popupDate, tasks) : []),
+    [popupDate, tasks],
+  );
 
   const cells = useMemo(() => buildCells(year, month), [year, month]);
 
@@ -141,13 +155,54 @@ export function CalendarMonthView() {
                   </div>
                 ))}
                 {overflow > 0 && (
-                  <span className="pl-1 text-[10px] text-content-muted">+{overflow}개</span>
+                  <button
+                    type="button"
+                    onClick={() => setPopupDate(date)}
+                    className="cursor-pointer pl-1 text-left text-[10px] text-content-muted hover:font-bold hover:text-content"
+                    title="이 날짜의 모든 일정 보기"
+                  >
+                    +{overflow}개
+                  </button>
                 )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Day detail popup — all tasks/milestones on the clicked date */}
+      <Modal
+        open={popupDate !== null}
+        onClose={() => setPopupDate(null)}
+        title={popupDate ? `${popupDate} 일정 (${popupTasks.length})` : '일정'}
+        width={420}
+      >
+        <div className="flex flex-col gap-1">
+          {popupTasks.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => { setInspecting(t.id); setPopupDate(null); }}
+              className="flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-2"
+              title="상세 보기"
+            >
+              <span
+                className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-sm"
+                style={{ background: taskColor(t) }}
+              >
+                {t.isMilestone && <Diamond size={8} className="text-white" />}
+              </span>
+              <span className="flex-1 truncate text-content">{t.name}</span>
+              <span className="shrink-0 text-2xs tabular-nums text-content-muted">
+                {t.isMilestone ? t.start : `${t.start} ~ ${t.end}`}
+              </span>
+            </button>
+          ))}
+          {popupTasks.length === 0 && (
+            <p className="py-4 text-center text-xs text-content-muted">일정이 없습니다.</p>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
