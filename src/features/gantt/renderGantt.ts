@@ -27,6 +27,8 @@ export interface GanttRenderModel {
   taskGroupColor: Map<TaskId, string>;
   /** Live drag preview: which task is being dragged and by how many days. */
   dragPreview: { taskId: TaskId; deltaDays: number; mode: string } | null;
+  /** Currently selected dependency id (for highlight). */
+  selectedDepId?: string | null;
 }
 
 /** Geometry of a rendered bar; cached for hit-testing. */
@@ -38,6 +40,13 @@ export interface BarRect {
   h: number;
   isMilestone: boolean;
   isSummary: boolean;
+}
+
+/** Line segments of a rendered dependency arrow; cached for hit-testing. */
+export interface DepHitbox {
+  depId: string;
+  /** Each tuple is [x1, y1, x2, y2] in canvas (viewport) coordinates. */
+  segments: Array<[number, number, number, number]>;
 }
 
 /**
@@ -305,14 +314,13 @@ function drawDependencies(
   firstRow: number,
   lastRow: number,
 ): void {
-  const { dependencies, rowIndex, timeline, palette, rows, schedules, showCritical } = model;
-  ctx.lineWidth = 1.5;
-  for (const dep of dependencies) {
+  const { dependencies, rowIndex, timeline, palette, rows, schedules, showCritical, selectedDepId } = model;
+
+  const paintDep = (dep: Dependency, highlight: boolean) => {
     const fi = rowIndex.get(dep.fromId);
     const ti = rowIndex.get(dep.toId);
-    if (fi === undefined || ti === undefined) continue;
-    // Cull links entirely outside the visible band.
-    if (Math.max(fi, ti) < firstRow - 2 || Math.min(fi, ti) > lastRow + 2) continue;
+    if (fi === undefined || ti === undefined) return;
+    if (Math.max(fi, ti) < firstRow - 2 || Math.min(fi, ti) > lastRow + 2) return;
     const from = rows[fi]!.task;
     const to = rows[ti]!.task;
 
@@ -323,31 +331,96 @@ function drawDependencies(
     const fromY = fi * ROW_HEIGHT - scrollTop + ROW_HEIGHT / 2;
     const toY = ti * ROW_HEIGHT - scrollTop + ROW_HEIGHT / 2;
 
-    // Anchor points depend on link type.
     let sx = fromEndX;
     let tx = toStartX;
-    if (dep.type === 'SS') {
-      sx = fromStartX;
-      tx = toStartX;
-    } else if (dep.type === 'FF') {
-      sx = fromEndX;
-      tx = toEndX;
-    } else if (dep.type === 'SF') {
-      sx = fromStartX;
-      tx = toEndX;
-    }
+    if (dep.type === 'SS') { sx = fromStartX; tx = toStartX; }
+    else if (dep.type === 'FF') { sx = fromEndX; tx = toEndX; }
+    else if (dep.type === 'SF') { sx = fromStartX; tx = toEndX; }
 
     const onCritical =
       showCritical &&
       (schedules.get(dep.fromId)?.isCritical ?? false) &&
       (schedules.get(dep.toId)?.isCritical ?? false);
-    ctx.strokeStyle = onCritical ? palette.critical : palette.link;
+
+    if (highlight) {
+      ctx.strokeStyle = palette.today;
+      ctx.lineWidth = 2.5;
+    } else {
+      ctx.strokeStyle = onCritical ? palette.critical : palette.link;
+      ctx.lineWidth = 1.5;
+    }
     drawElbow(ctx, sx, fromY, tx, toY, dep.type);
     drawArrowHead(ctx, tx, toY, dep.type === 'FF' || dep.type === 'SF' ? -1 : 1, ctx.strokeStyle);
+  };
+
+  // Non-selected deps first, selected on top so it isn't obscured.
+  for (const dep of dependencies) {
+    if (dep.id !== selectedDepId) paintDep(dep, false);
+  }
+  if (selectedDepId) {
+    const sel = dependencies.find((d) => d.id === selectedDepId);
+    if (sel) paintDep(sel, true);
   }
 }
 
 // --- drawing primitives ------------------------------------------------------
+
+/**
+ * Returns the three elbow line segments for a dependency arrow in canvas
+ * (viewport) coordinates. Used by both the canvas painter and the hit-tester.
+ */
+function elbowSegments(
+  sx: number,
+  sy: number,
+  tx: number,
+  ty: number,
+  type: string,
+): Array<[number, number, number, number]> {
+  const gap = 10;
+  if (type === 'FS') {
+    const midX = Math.max(sx + gap, tx - gap);
+    return [[sx, sy, midX, sy], [midX, sy, midX, ty], [midX, ty, tx, ty]];
+  }
+  const offsetX = sx + (type === 'SS' ? -gap : gap);
+  return [[sx, sy, offsetX, sy], [offsetX, sy, offsetX, ty], [offsetX, ty, tx, ty]];
+}
+
+/**
+ * Compute hit-test geometry for all dependency arrows in the current frame.
+ * Must be called with the same model/scroll values that were passed to
+ * renderGanttBody so that coordinates match.
+ */
+export function computeDepHitboxes(
+  model: GanttRenderModel,
+  scrollLeft: number,
+  scrollTop: number,
+): DepHitbox[] {
+  const { dependencies, rowIndex, timeline, rows } = model;
+  const hitboxes: DepHitbox[] = [];
+  for (const dep of dependencies) {
+    const fi = rowIndex.get(dep.fromId);
+    const ti = rowIndex.get(dep.toId);
+    if (fi === undefined || ti === undefined) continue;
+    const from = rows[fi]!.task;
+    const to = rows[ti]!.task;
+
+    const fromEndX = timeline.xFor(from.end) + timeline.dayWidth - scrollLeft;
+    const fromStartX = timeline.xFor(from.start) - scrollLeft;
+    const toStartX = timeline.xFor(to.start) - scrollLeft;
+    const toEndX = timeline.xFor(to.end) + timeline.dayWidth - scrollLeft;
+    const fromY = fi * ROW_HEIGHT - scrollTop + ROW_HEIGHT / 2;
+    const toY = ti * ROW_HEIGHT - scrollTop + ROW_HEIGHT / 2;
+
+    let sx = fromEndX;
+    let tx = toStartX;
+    if (dep.type === 'SS') { sx = fromStartX; tx = toStartX; }
+    else if (dep.type === 'FF') { sx = fromEndX; tx = toEndX; }
+    else if (dep.type === 'SF') { sx = fromStartX; tx = toEndX; }
+
+    hitboxes.push({ depId: dep.id, segments: elbowSegments(sx, fromY, tx, toY, dep.type) });
+  }
+  return hitboxes;
+}
 
 function durationPx(timeline: Timeline, start: ISODate, end: ISODate): number {
   return (timeline.xFor(end) + timeline.dayWidth) - timeline.xFor(start);
@@ -385,19 +458,12 @@ function drawElbow(
   ty: number,
   type: string,
 ): void {
+  const segs = elbowSegments(sx, sy, tx, ty, type);
   ctx.beginPath();
-  ctx.moveTo(sx, sy);
-  const gap = 10;
-  if (type === 'FS') {
-    const midX = Math.max(sx + gap, tx - gap);
-    ctx.lineTo(midX, sy);
-    ctx.lineTo(midX, ty);
-    ctx.lineTo(tx, ty);
-  } else {
-    // Generic routing for SS/FF/SF.
-    ctx.lineTo(sx + (type === 'SS' ? -gap : gap), sy);
-    ctx.lineTo(sx + (type === 'SS' ? -gap : gap), ty);
-    ctx.lineTo(tx, ty);
+  ctx.moveTo(segs[0]![0], segs[0]![1]);
+  for (const [x1, y1, x2, y2] of segs) {
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
   }
   ctx.stroke();
 }

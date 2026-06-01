@@ -8,7 +8,9 @@ import { readPalette } from './colors';
 import {
   renderGanttBody,
   renderGanttHeader,
+  computeDepHitboxes,
   type BarRect,
+  type DepHitbox,
   type GanttRenderModel,
 } from './renderGantt';
 import { HEADER_HEIGHT, RESIZE_HANDLE, ROW_HEIGHT, SCROLL_BOTTOM_PADDING } from './layout';
@@ -57,6 +59,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const bodyCanvasRef = useRef<HTMLCanvasElement>(null);
   const headerCanvasRef = useRef<HTMLCanvasElement>(null);
   const barsRef = useRef<BarRect[]>([]);
+  const depHitboxesRef = useRef<DepHitbox[]>([]);
+  const selectedDepIdRef = useRef<string | null>(null);
   const dragRef = useRef<DragState>(NO_DRAG);
   const spaceHeldRef = useRef(false);
   /** Prevents scroll-event feedback when we programmatically set scrollTop. */
@@ -205,6 +209,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       dragPreview: isMoving
         ? { taskId: drag.taskId!, deltaDays: drag.deltaDays, mode: drag.mode! }
         : null,
+      selectedDepId: selectedDepIdRef.current,
     };
   }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected, view, baselineMap, taskGroupColor]);
 
@@ -226,6 +231,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const model = buildModel();
     barsRef.current = renderGanttBody(bctx, model, vw, vh, sl, st);
+    depHitboxesRef.current = computeDepHitboxes(model, sl, st);
 
     setCanvasSize(header, vw, HEADER_HEIGHT, dpr);
     const hctx = header.getContext('2d')!;
@@ -278,6 +284,23 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
   }, [setDomCursor]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !isTextTarget(e.target)) {
+        const depId = selectedDepIdRef.current;
+        if (depId) {
+          e.preventDefault();
+          useProjectStore.getState().removeDependency(depId);
+          selectedDepIdRef.current = null;
+          draw();
+          showToast('의존성 삭제됨 · Ctrl+Z로 되돌리기');
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [draw, showToast]);
+
   const handleScroll = useCallback(() => {
     // Skip events triggered by our own programmatic scrollTop assignments.
     if (isSyncingRef.current) return;
@@ -324,6 +347,16 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     return { bar: null, edge: null };
   };
 
+  const hitTestDep = useCallback((x: number, y: number): string | null => {
+    const TOLERANCE = 6;
+    for (const hb of depHitboxesRef.current) {
+      for (const [x1, y1, x2, y2] of hb.segments) {
+        if (distToSegment(x, y, x1, y1, x2, y2) <= TOLERANCE) return hb.depId;
+      }
+    }
+    return null;
+  }, []);
+
   // --------------------------------------------------------------------------
   // Hover cursor (fires on every mousemove while not dragging)
   // --------------------------------------------------------------------------
@@ -368,7 +401,19 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     }
 
     const { bar, edge } = hitTest(e.clientX, e.clientY);
-    if (!bar) { store.clearSelection(); return; }
+    if (!bar) {
+      const scRect = scroller.getBoundingClientRect();
+      const depId = hitTestDep(e.clientX - scRect.left, e.clientY - scRect.top);
+      if (depId) {
+        selectedDepIdRef.current = depId;
+        draw();
+      } else {
+        selectedDepIdRef.current = null;
+        store.clearSelection();
+      }
+      return;
+    }
+    selectedDepIdRef.current = null;
 
     store.selectTask(bar.taskId, e.ctrlKey || e.metaKey);
 
@@ -583,4 +628,17 @@ function setCanvasSize(canvas: HTMLCanvasElement, w: number, h: number, dpr: num
 function isTextTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+}
+
+function distToSegment(
+  px: number, py: number,
+  x1: number, y1: number,
+  x2: number, y2: number,
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
