@@ -52,7 +52,9 @@ export function TaskInspector() {
         <div className="grid grid-cols-2 gap-3">
           <Field label="시작일">
             <input
-              type="date"
+              type="text"
+              placeholder="YYYY-MM-DD"
+              inputMode="numeric"
               value={task.start}
               onChange={(e) => updateTask(task.id, { start: e.target.value })}
               className="input"
@@ -60,7 +62,9 @@ export function TaskInspector() {
           </Field>
           <Field label="종료일">
             <input
-              type="date"
+              type="text"
+              placeholder="YYYY-MM-DD"
+              inputMode="numeric"
               value={task.end}
               onChange={(e) => updateTask(task.id, { end: e.target.value })}
               className="input"
@@ -133,7 +137,9 @@ export function TaskInspector() {
             </select>
             {task.constraint !== 'asap' && (
               <input
-                type="date"
+                type="text"
+                placeholder="YYYY-MM-DD"
+                inputMode="numeric"
                 value={task.constraintDate ?? ''}
                 onChange={(e) => updateTask(task.id, { constraintDate: e.target.value || null })}
                 className="input"

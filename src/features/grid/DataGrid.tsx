@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Diamond } from 'lucide-react';
+import { ChevronDown, ChevronRight, Diamond, GripVertical } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -56,6 +56,10 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const outdentTask = useProjectStore((s) => s.outdentTask);
   const importTsvTasks = useProjectStore((s) => s.importTsvTasks);
   const updateTasksFromTsv = useProjectStore((s) => s.updateTasksFromTsv);
+  const moveTaskBefore = useProjectStore((s) => s.moveTaskBefore);
+  const addTasksToGroup = useProjectStore((s) => s.addTasksToGroup);
+  const removeTasksFromGroup = useProjectStore((s) => s.removeTasksFromGroup);
+  const viewGroups = useProjectStore((s) => s.derived.project.viewGroups);
   /** Prevents scroll-event feedback when programmatically setting scrollTop. */
   const isSyncingRef = useRef(false);
   /** True while the user is actively scrolling this panel; guards against
@@ -64,6 +68,9 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const clearUserScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Anchor row for Shift+click range selection. Set on every plain/Ctrl click. */
   const anchorIdRef = useRef<string | null>(null);
+  const dragIdRef = useRef<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; taskId: string } | null>(null);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
@@ -114,6 +121,13 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     },
     [selected, rows, updateTasksFromTsv, importTsvTasks],
   );
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [contextMenu]);
 
   // Sync external scrollTop (from gantt) into our scroller, suppressing feedback.
   useEffect(() => {
@@ -209,6 +223,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
               top={(first + visIdx) * ROW_HEIGHT}
               selected={selected.has(row.task.id)}
               critical={showCritical && (schedules.get(row.task.id)?.isCritical ?? false)}
+              isDragOver={dropTargetId === row.task.id}
               onSelect={(isCtrl, isShift) => {
                 const id = row.task.id;
                 if (isShift && anchorIdRef.current) {
@@ -228,10 +243,71 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
               onToggle={() => toggleCollapse(row.task.id)}
               onIndent={() => indentTask(row.task.id)}
               onOutdent={() => outdentTask(row.task.id)}
+              onDragStart={() => { dragIdRef.current = row.task.id; }}
+              onDragEnd={() => { dragIdRef.current = null; setDropTargetId(null); }}
+              onDragOver={() => setDropTargetId(row.task.id)}
+              onDrop={() => {
+                if (dragIdRef.current && dropTargetId) {
+                  moveTaskBefore(dragIdRef.current, dropTargetId);
+                }
+                dragIdRef.current = null;
+                setDropTargetId(null);
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setContextMenu({ x: e.clientX, y: e.clientY, taskId: row.task.id });
+              }}
             />
           ))}
         </div>
       </div>
+
+      {contextMenu && createPortal(
+        <div
+          style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 9999 }}
+          className="min-w-[160px] rounded-md border border-border bg-surface-2 py-1 shadow-xl text-xs"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {viewGroups.length === 0 ? (
+            <div className="px-3 py-2 text-content-muted">보기 그룹이 없습니다</div>
+          ) : (
+            <>
+              <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wider text-content-muted">보기 그룹</div>
+              {viewGroups.map((g) => {
+                const inGroup = g.taskIds.includes(contextMenu.taskId);
+                return (
+                  <label
+                    key={g.id}
+                    className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-surface-3"
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={inGroup}
+                      onChange={() => {
+                        if (inGroup) removeTasksFromGroup(g.id, [contextMenu.taskId]);
+                        else addTasksToGroup(g.id, [contextMenu.taskId]);
+                      }}
+                      className="h-3 w-3 accent-accent"
+                    />
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: g.color }} />
+                    {g.name}
+                  </label>
+                );
+              })}
+            </>
+          )}
+          <button
+            className="mt-1 w-full border-t border-border px-3 py-1.5 text-left text-content-muted hover:bg-surface-3"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => setContextMenu(null)}
+          >
+            닫기
+          </button>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -242,10 +318,16 @@ interface GridRowProps {
   top: number;
   selected: boolean;
   critical: boolean;
+  isDragOver: boolean;
   onSelect: (isCtrl: boolean, isShift: boolean) => void;
   onToggle: () => void;
   onIndent: () => void;
   onOutdent: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDragOver: () => void;
+  onDrop: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }
 
 function GridRow({
@@ -254,10 +336,16 @@ function GridRow({
   top,
   selected,
   critical,
+  isDragOver,
   onSelect,
   onToggle,
   onIndent,
   onOutdent,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
+  onContextMenu,
 }: GridRowProps) {
   const { task, depth, hasChildren, wbs } = row;
   const project = useProjectStore((s) => s.derived.project);
@@ -274,17 +362,27 @@ function GridRow({
   return (
     <div
       className={cn(
-        'absolute left-0 flex w-full items-stretch border-b border-border text-xs',
+        'absolute left-0 flex w-full items-stretch border-b border-border text-xs group/row',
         task.cancelled && 'opacity-50',
         selected ? 'bg-accent/15' : hasChildren ? 'bg-surface-2/40' : 'hover:bg-surface-2/60',
+        isDragOver && 'shadow-[0_-2px_0_0_rgb(var(--color-accent))]',
       )}
       style={{ top, height: ROW_HEIGHT }}
+      draggable
       onMouseDown={(e) => onSelect(e.ctrlKey || e.metaKey, e.shiftKey)}
       onKeyDown={handleKeyDown}
+      onDragStart={(e) => { e.stopPropagation(); onDragStart(); }}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
+      onDrop={(e) => { e.preventDefault(); onDrop(); }}
+      onContextMenu={onContextMenu}
       tabIndex={0}
       role="row"
       aria-selected={selected}
     >
+      <div className="pointer-events-none absolute left-0.5 top-0 z-[1] flex h-full items-center text-content-muted opacity-0 group-hover/row:opacity-40">
+        <GripVertical size={11} />
+      </div>
       {columns.map((col) => (
         <div
           key={col.key}

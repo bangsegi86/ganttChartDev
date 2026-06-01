@@ -101,7 +101,14 @@ export function Toolbar({
     const state = useProjectStore.getState();
     const { project, schedules } = state.derived;
     const name = project.name || 'gantt';
-    if (kind === 'excel') await exportExcel(project, name);
+    if (kind === 'excel') await exportExcel(project, name, {
+      project,
+      schedules,
+      zoom: state.view.zoom,
+      theme: state.view.theme,
+      showCritical: state.view.showCriticalPath,
+      showBaseline: state.view.showBaseline,
+    });
     else {
       const input = {
         project,

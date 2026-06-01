@@ -70,7 +70,9 @@ export function GridCell({ task, field, className }: GridCellProps) {
       <input
         ref={inputRef}
         value={draft}
-        type={field === 'progress' ? 'number' : field === 'name' ? 'text' : 'date'}
+        type={field === 'progress' ? 'number' : 'text'}
+        placeholder={field === 'start' || field === 'end' ? 'YYYY-MM-DD' : undefined}
+        inputMode={field === 'start' || field === 'end' ? 'numeric' : undefined}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {

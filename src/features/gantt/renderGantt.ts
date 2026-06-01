@@ -25,6 +25,8 @@ export interface GanttRenderModel {
   baseline: Map<TaskId, BaselineEntry> | null;
   /** First view-group color for each task (group color overrides priority color). */
   taskGroupColor: Map<TaskId, string>;
+  /** Assignee color for each task (sits below group color but above critical/priority color). */
+  taskAssigneeColor: Map<TaskId, string>;
   /** Live drag preview: which task is being dragged and by how many days. */
   dragPreview: { taskId: TaskId; deltaDays: number; mode: string } | null;
   /** Currently selected dependency id (for highlight). */
@@ -176,7 +178,7 @@ function drawBar(
   scrollLeft: number,
   scrollTop: number,
 ): BarRect | null {
-  const { timeline, palette, schedules, selected, showCritical, baseline, showBaseline, taskGroupColor, dragPreview } = model;
+  const { timeline, palette, schedules, selected, showCritical, baseline, showBaseline, taskGroupColor, taskAssigneeColor, dragPreview } = model;
   const t = row.task;
   const y = row.index * ROW_HEIGHT - scrollTop;
   const x = timeline.xFor(t.start) - scrollLeft;
@@ -238,7 +240,7 @@ function drawBar(
   } else {
     const base = cancelled
       ? '#9ca3af' // gray-400 for cancelled tasks
-      : t.color ?? taskGroupColor.get(t.id) ?? (critical ? palette.critical : PRIORITY_COLORS[t.priority]);
+      : t.color ?? taskGroupColor.get(t.id) ?? taskAssigneeColor.get(t.id) ?? (critical ? palette.critical : PRIORITY_COLORS[t.priority]);
     roundRect(ctx, x, barY, w, BAR_HEIGHT, 4);
     ctx.fillStyle = base;
     ctx.fill();

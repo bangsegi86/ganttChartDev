@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { Minus, Plus } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -79,6 +80,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const view = useProjectStore((s) => s.view);
   const selected = useProjectStore((s) => s.selectedTaskIds);
   const linkSourceId = useProjectStore((s) => s.linkSourceId);
+  const scaleDayWidth = useProjectStore((s) => s.scaleDayWidth);
+  const setDayWidthScale = useProjectStore((s) => s.setDayWidthScale);
 
   const project = derived.project;
   const zoomConfig = ZOOM_CONFIGS[view.zoom];
@@ -103,6 +106,17 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     }
     return map;
   }, [project.viewGroups]);
+
+  const taskAssigneeColor = useMemo<Map<TaskId, string>>(() => {
+    const map = new Map<TaskId, string>();
+    for (const task of project.tasks) {
+      if (task.assigneeIds.length > 0) {
+        const assignee = project.resources.find((r) => r.id === task.assigneeIds[0]);
+        if (assignee?.color) map.set(task.id, assignee.color);
+      }
+    }
+    return map;
+  }, [project.tasks, project.resources]);
 
   const baselineMap = useMemo<Map<TaskId, BaselineEntry> | null>(() => {
     if (!project.activeBaselineId) return null;
@@ -206,12 +220,13 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       showBaseline: view.showBaseline,
       baseline: baselineMap,
       taskGroupColor,
+      taskAssigneeColor,
       dragPreview: isMoving
         ? { taskId: drag.taskId!, deltaDays: drag.deltaDays, mode: drag.mode! }
         : null,
       selectedDepId: selectedDepIdRef.current,
     };
-  }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected, view, baselineMap, taskGroupColor]);
+  }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected, view, baselineMap, taskGroupColor, taskAssigneeColor]);
 
   const draw = useCallback(() => {
     const scroller = scrollerRef.current;
@@ -580,6 +595,40 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
           className="pointer-events-none absolute z-20 flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2.5 py-1.5 text-xs shadow-lg text-content"
           style={{ display: 'none', whiteSpace: 'nowrap' }}
         />
+      </div>
+
+      {/* Zoom slider — bottom-right of the gantt area */}
+      <div className="pointer-events-auto absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-2xs shadow-sm">
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={() => scaleDayWidth(1 / 1.2)}
+          className="text-content-muted hover:text-content"
+          title="축소"
+        >
+          <Minus size={12} />
+        </button>
+        <input
+          type="range"
+          min={0.25}
+          max={4}
+          step={0.05}
+          value={view.dayWidthScale}
+          onMouseDown={(e) => e.stopPropagation()}
+          onChange={(e) => setDayWidthScale(Number(e.target.value))}
+          className="w-20 accent-[rgb(var(--color-accent))]"
+          title="가로 비율 조정"
+        />
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={() => scaleDayWidth(1.2)}
+          className="text-content-muted hover:text-content"
+          title="확대"
+        >
+          <Plus size={12} />
+        </button>
+        <span className="w-9 text-right tabular-nums text-content-muted">
+          {Math.round(view.dayWidthScale * 100)}%
+        </span>
       </div>
 
       {/* Undo toast — slides up from the bottom of the panel */}

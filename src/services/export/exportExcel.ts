@@ -3,6 +3,7 @@ import type { Project } from '@/entities';
 import { buildVisibleRows } from '@/features/grid/treeModel';
 import { bridge } from '@/shared/bridge';
 import { PRIORITY_COLORS } from '@/features/gantt/colors';
+import { renderFullCanvas, type FullRenderInput } from './renderFullCanvas';
 
 const PRIORITY_LABEL: Record<string, string> = {
   low: '낮음',
@@ -16,7 +17,11 @@ const PRIORITY_LABEL: Record<string, string> = {
  * (indented names + Excel grouping), priority colour swatches, progress and
  * assignees.
  */
-export async function exportExcel(project: Project, fileName: string): Promise<void> {
+export async function exportExcel(
+  project: Project,
+  fileName: string,
+  ganttInput?: FullRenderInput,
+): Promise<void> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Smart Gantt';
   wb.created = new Date();
@@ -92,6 +97,20 @@ export async function exportExcel(project: Project, fileName: string): Promise<v
       }
     }
   });
+
+  if (ganttInput) {
+    const ganttCanvas = renderFullCanvas(ganttInput);
+    const ganttBase64 = ganttCanvas.toDataURL('image/png').split(',')[1]!;
+    const ws2 = wb.addWorksheet('간트 차트');
+    const imageId = wb.addImage({ base64: ganttBase64, extension: 'png' });
+    ws2.addImage(imageId, {
+      tl: { col: 0, row: 0 },
+      ext: {
+        width: ganttCanvas.width / (window.devicePixelRatio || 1),
+        height: ganttCanvas.height / (window.devicePixelRatio || 1),
+      },
+    } as Parameters<typeof ws2.addImage>[1]);
+  }
 
   const buffer = await wb.xlsx.writeBuffer();
   const base64 = arrayBufferToBase64(buffer as ArrayBuffer);

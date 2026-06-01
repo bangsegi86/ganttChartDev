@@ -67,6 +67,7 @@ export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
     showBaseline,
     baseline,
     taskGroupColor: buildTaskGroupColor(project),
+    taskAssigneeColor: buildTaskAssigneeColor(project),
     dragPreview: null,
   };
 
@@ -129,6 +130,17 @@ function buildTaskGroupColor(project: Project): Map<TaskId, string> {
   for (const g of project.viewGroups) {
     for (const tid of g.taskIds) {
       if (!map.has(tid)) map.set(tid, g.color);
+    }
+  }
+  return map;
+}
+
+function buildTaskAssigneeColor(project: Project): Map<TaskId, string> {
+  const map = new Map<TaskId, string>();
+  for (const task of project.tasks) {
+    if (task.assigneeIds.length > 0) {
+      const assignee = project.resources.find((r) => r.id === task.assigneeIds[0]);
+      if (assignee?.color) map.set(task.id, assignee.color);
     }
   }
   return map;

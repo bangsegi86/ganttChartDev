@@ -88,6 +88,8 @@ interface ProjectStore {
   resizeTask: (id: TaskId, edge: 'start' | 'end', deltaDays: number) => void;
   moveTaskUp: (id: TaskId) => void;
   moveTaskDown: (id: TaskId) => void;
+  /** Move draggedId immediately before targetId in the sibling order. */
+  moveTaskBefore: (draggedId: TaskId, targetId: TaskId) => void;
   duplicateSelected: () => void;
   copySelected: () => void;
   paste: () => void;
@@ -147,6 +149,8 @@ interface ProjectStore {
   clearViewFilter: () => void;
   /** Multiply the fine-zoom dayWidth scale (Ctrl+Wheel). Clamped to [0.1, 10]. */
   scaleDayWidth: (factor: number) => void;
+  /** Set the fine-zoom dayWidth scale directly. Clamped to [0.1, 10]. */
+  setDayWidthScale: (scale: number) => void;
 }
 
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -477,6 +481,27 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         if (idx >= siblings.length - 1) return;
         const next = siblings[idx + 1]!;
         [t.order, next.order] = [next.order, t.order];
+      });
+    },
+
+    moveTaskBefore(draggedId, targetId) {
+      commit((d) => {
+        const dragged = d.tasks.find((x) => x.id === draggedId);
+        const target = d.tasks.find((x) => x.id === targetId);
+        if (!dragged || !target || draggedId === targetId) return;
+        // Only allow reorder within same parent.
+        if (dragged.parentId !== target.parentId) return;
+        const siblings = d.tasks
+          .filter((x) => x.parentId === dragged.parentId)
+          .sort((a, b) => a.order - b.order);
+        const fromIdx = siblings.findIndex((x) => x.id === draggedId);
+        const toIdx = siblings.findIndex((x) => x.id === targetId);
+        if (fromIdx === -1 || toIdx === -1) return;
+        // Splice and re-assign orders.
+        const [item] = siblings.splice(fromIdx, 1);
+        const insertAt = fromIdx < toIdx ? toIdx - 1 : toIdx;
+        siblings.splice(insertAt, 0, item!);
+        siblings.forEach((s, i) => { s.order = i; });
       });
     },
 
@@ -850,6 +875,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       set((s) => ({
         view: { ...s.view, dayWidthScale: Math.max(0.1, Math.min(10, s.view.dayWidthScale * factor)) },
       }));
+    },
+    setDayWidthScale(scale) {
+      set((s) => ({ view: { ...s.view, dayWidthScale: Math.max(0.1, Math.min(10, scale)) } }));
     },
   };
 });
