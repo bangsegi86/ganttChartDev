@@ -34,8 +34,6 @@ const PRIORITY_LABELS: Record<Priority, string> = {
   critical: '긴급',
 };
 
-type SortKey = 'none' | 'name' | 'start' | 'end' | 'progress';
-
 interface DataGridProps {
   width: number;
   scrollTop: number;
@@ -45,7 +43,7 @@ interface DataGridProps {
 /**
  * Left-hand WBS grid. Rows are virtualised and kept row-aligned with the gantt
  * via a shared `scrollTop`. Supports inline editing, hierarchy collapse,
- * multi-select, column resizing, a name filter and column sort.
+ * multi-select, column resizing, and a name filter.
  */
 export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps) {
   const schedules = useProjectStore((s) => s.derived.schedules);
@@ -76,23 +74,15 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
   const [filter, setFilter] = useState('');
-  const [sort, setSort] = useState<SortKey>('none');
 
   const visibleTasks = useVisibleTasks();
   const allRows = useMemo(() => buildVisibleRows(visibleTasks), [visibleTasks]);
 
-  // Apply filter/sort to a *flat* view (sorting flattens the hierarchy display).
   const rows = useMemo(() => {
-    let result = allRows;
-    if (filter.trim()) {
-      const q = filter.trim().toLowerCase();
-      result = result.filter((r) => r.task.name.toLowerCase().includes(q));
-    }
-    if (sort !== 'none') {
-      result = [...result].sort((a, b) => compareTasks(a.task, b.task, sort));
-    }
-    return result;
-  }, [allRows, filter, sort]);
+    if (!filter.trim()) return allRows;
+    const q = filter.trim().toLowerCase();
+    return allRows.filter((r) => r.task.name.toLowerCase().includes(q));
+  }, [allRows, filter]);
 
   // Sync external scrollTop (from gantt) into our scroller, suppressing feedback.
   useEffect(() => {
@@ -127,12 +117,6 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     window.addEventListener('mouseup', up);
   };
 
-  const cycleSort = (key: string) => {
-    if (key === 'name' || key === 'start' || key === 'end' || key === 'progress') {
-      setSort((prev) => (prev === key ? 'none' : (key as SortKey)));
-    }
-  };
-
   return (
     <div className="flex h-full flex-col border-r border-border bg-surface" style={{ width }} onPaste={handlePaste}>
       {/* Filter row */}
@@ -156,11 +140,9 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
             key={col.key}
             className="relative flex items-center border-r border-border px-2"
             style={{ width: col.width, justifyContent: col.align === 'right' ? 'flex-end' : 'flex-start' }}
-            onClick={() => cycleSort(col.key)}
             role="columnheader"
           >
             <span className="truncate">{col.label}</span>
-            {sort === col.key && <span className="ml-1">▲</span>}
             <span
               className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-accent"
               onMouseDown={(e) => startColumnResize(col.key, e)}
@@ -333,21 +315,6 @@ function priorityClass(p: Priority): string {
       return 'bg-blue-500/20 text-blue-400';
     default:
       return 'bg-surface-3 text-content-muted';
-  }
-}
-
-function compareTasks(a: Task, b: Task, key: SortKey): number {
-  switch (key) {
-    case 'name':
-      return a.name.localeCompare(b.name);
-    case 'start':
-      return a.start.localeCompare(b.start);
-    case 'end':
-      return a.end.localeCompare(b.end);
-    case 'progress':
-      return b.progress - a.progress;
-    default:
-      return 0;
   }
 }
 
