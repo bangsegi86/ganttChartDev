@@ -6,6 +6,7 @@ import {
   Copy,
   Download,
   FilePlus2,
+  FolderInput,
   FileSpreadsheet,
   FileText,
   FlagTriangleRight,
@@ -98,6 +99,8 @@ export function Toolbar({
   const toggleCritical = useProjectStore((s) => s.toggleCriticalPath);
   const toggleTheme = useProjectStore((s) => s.toggleTheme);
   const saveProject = useProjectStore((s) => s.saveProject);
+  const shareExport = useProjectStore((s) => s.shareExport);
+  const shareImport = useProjectStore((s) => s.shareImport);
   const setActiveView = useProjectStore((s) => s.setActiveView);
 
   const exportNow = async (kind: 'excel' | 'png' | 'pdf') => {
@@ -304,6 +307,13 @@ export function Toolbar({
         </Button>
         <Button size="sm" onClick={() => void exportNow('pdf')} title="PDF 내보내기">
           <FileText size={14} />
+        </Button>
+        <Divider />
+        <Button size="sm" onClick={() => void shareExport()} title="파일로 내보내기 (.smgantt) — 다른 사람과 공유 (Ctrl+Shift+E)">
+          <Download size={14} /> 공유
+        </Button>
+        <Button size="sm" onClick={() => void shareImport()} title="파일 가져오기 (.smgantt) — 다른 사람의 파일 열기 (Ctrl+Shift+I)">
+          <FolderInput size={14} /> 가져오기
         </Button>
         <Divider />
         <Button size="sm" onClick={() => useProjectStore.getState().newProject()} title="새 프로젝트">

@@ -75,6 +75,37 @@ const fallback: AppBridge = {
       return { ok: true };
     },
   },
+  project: {
+    async exportFile(defaultName, json) {
+      // Browser fallback: download as a .smgantt file.
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${defaultName}.smgantt`;
+      link.click();
+      URL.revokeObjectURL(url);
+      return { ok: true };
+    },
+    async importFile() {
+      return new Promise<{ ok: boolean; json: string | null }>((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.smgantt,.json';
+        input.onchange = () => {
+          const file = input.files?.[0];
+          if (!file) { resolve({ ok: false, json: null }); return; }
+          const reader = new FileReader();
+          reader.onload = () => resolve({ ok: true, json: reader.result as string });
+          reader.onerror = () => resolve({ ok: false, json: null });
+          reader.readAsText(file);
+        };
+        // Cancelled: resolve after short delay (no cancel event on file input)
+        input.addEventListener('cancel', () => resolve({ ok: false, json: null }));
+        input.click();
+      });
+    },
+  },
 };
 
 export function bridge(): AppBridge {

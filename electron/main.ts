@@ -143,6 +143,39 @@ ipcMain.handle(
   },
 );
 
+// --- IPC: project file sharing (공유 내보내기/가져오기) -------------------------
+
+ipcMain.handle('project:export-file', async (_e, defaultName: string, json: string) => {
+  const win = mainWindow ?? BrowserWindow.getFocusedWindow();
+  const { canceled, filePath } = await dialog.showSaveDialog(win!, {
+    defaultPath: `${defaultName}.smgantt`,
+    filters: [
+      { name: '스마트 간트 프로젝트', extensions: ['smgantt'] },
+      { name: 'JSON 파일', extensions: ['json'] },
+    ],
+  });
+  if (canceled || !filePath) return { ok: false };
+  await fs.writeFile(filePath, json, 'utf-8');
+  return { ok: true, path: filePath };
+});
+
+ipcMain.handle('project:import-file', async () => {
+  const win = mainWindow ?? BrowserWindow.getFocusedWindow();
+  const { canceled, filePaths } = await dialog.showOpenDialog(win!, {
+    filters: [
+      { name: '스마트 간트 프로젝트', extensions: ['smgantt', 'json'] },
+    ],
+    properties: ['openFile'],
+  });
+  if (canceled || !filePaths[0]) return { ok: false, json: null };
+  try {
+    const json = await fs.readFile(filePaths[0], 'utf-8');
+    return { ok: true, json };
+  } catch {
+    return { ok: false, json: null };
+  }
+});
+
 function sanitize(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
@@ -162,8 +195,11 @@ function buildKoreanMenu(): void {
     { type: 'separator' },
     { label: '저장', accelerator: 'CmdOrCtrl+S', click: () => send('menu:save') },
     { type: 'separator' },
+    { label: '파일로 내보내기 (.smgantt)…', accelerator: 'CmdOrCtrl+Shift+E', click: () => send('menu:share-export') },
+    { label: '파일 가져오기 (.smgantt)…', accelerator: 'CmdOrCtrl+Shift+I', click: () => send('menu:share-import') },
+    { type: 'separator' },
     {
-      label: '내보내기',
+      label: '이미지/문서로 내보내기',
       submenu: [
         { label: '엑셀 (.xlsx)', click: () => send('menu:export-excel') },
         { label: 'PNG 이미지', click: () => send('menu:export-png') },

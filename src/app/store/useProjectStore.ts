@@ -16,6 +16,7 @@ import type { FilterMode } from '@/features/view/viewFilter';
 import { recalc, type DerivedSchedule } from './recalc';
 import { wouldCreateCycle } from '@/services/dependency/graph';
 import { autosaveRepository, projectRepository } from '@/services/persistence/projectRepository';
+import { bridge } from '@/shared/bridge';
 import { addDaysISO, diffDaysISO } from '@/shared/date/dateUtils';
 import type { ZoomLevel } from '@/features/gantt/zoom';
 import { stepZoom } from '@/features/gantt/zoom';
@@ -74,6 +75,8 @@ interface ProjectStore {
   newProject: () => void;
   saveProject: () => Promise<void>;
   flushAutosave: () => Promise<void>;
+  shareExport: () => Promise<void>;
+  shareImport: () => Promise<void>;
 
   // --- task mutations ---
   updateTask: (id: TaskId, patch: Partial<Task>) => void;
@@ -287,6 +290,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     async flushAutosave() {
       await autosaveRepository.write(get().derived.project);
+    },
+
+    async shareExport() {
+      const project = get().derived.project;
+      const json = JSON.stringify(project, null, 2);
+      await bridge().project.exportFile(project.name || '간트프로젝트', json);
+    },
+
+    async shareImport() {
+      const result = await bridge().project.importFile();
+      if (!result.ok || !result.json) return;
+      try {
+        const project = JSON.parse(result.json) as Project;
+        get().loadProject(project);
+      } catch {
+        // Silently ignore malformed JSON — could show a toast in the future
+      }
     },
 
     // --- task mutations ---

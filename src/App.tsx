@@ -96,6 +96,10 @@ export default function App() {
         state.scaleDayWidth(1 / 1.2);
       } else if (action === 'menu:zoom-reset') {
         state.setDayWidthScale(1.0);
+      } else if (action === 'menu:share-export') {
+        await state.shareExport();
+      } else if (action === 'menu:share-import') {
+        await state.shareImport();
       }
     });
   }, []);

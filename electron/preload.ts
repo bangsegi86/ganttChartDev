@@ -22,7 +22,9 @@ type MenuAction =
   | 'menu:export-pdf'
   | 'menu:zoom-in'
   | 'menu:zoom-out'
-  | 'menu:zoom-reset';
+  | 'menu:zoom-reset'
+  | 'menu:share-export'
+  | 'menu:share-import';
 
 const bridge = {
   menu: {
@@ -37,6 +39,8 @@ const bridge = {
         'menu:zoom-in',
         'menu:zoom-out',
         'menu:zoom-reset',
+        'menu:share-export',
+        'menu:share-import',
       ];
       const listeners = actions.map((ch) => {
         const fn = () => callback(ch);
@@ -68,6 +72,12 @@ const bridge = {
       filters: FileFilter[],
     ): Promise<PersistenceResult> =>
       ipcRenderer.invoke('export:save-binary', defaultName, base64, filters),
+  },
+  project: {
+    exportFile: (defaultName: string, json: string): Promise<PersistenceResult> =>
+      ipcRenderer.invoke('project:export-file', defaultName, json),
+    importFile: (): Promise<PersistenceResult> =>
+      ipcRenderer.invoke('project:import-file'),
   },
 };
 
