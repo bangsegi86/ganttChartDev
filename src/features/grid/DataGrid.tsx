@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Diamond } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
@@ -55,6 +56,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const indentTask = useProjectStore((s) => s.indentTask);
   const outdentTask = useProjectStore((s) => s.outdentTask);
   const importTsvTasks = useProjectStore((s) => s.importTsvTasks);
+  /** Prevents scroll-event feedback when programmatically setting scrollTop. */
+  const isSyncingRef = useRef(false);
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -88,10 +91,13 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     return result;
   }, [allRows, filter, sort]);
 
-  // Sync external scrollTop (from gantt) into our scroller.
+  // Sync external scrollTop (from gantt) into our scroller, suppressing feedback.
   useEffect(() => {
     const el = scrollerRef.current;
-    if (el && Math.abs(el.scrollTop - scrollTop) > 0.5) el.scrollTop = scrollTop;
+    if (!el || Math.abs(el.scrollTop - scrollTop) <= 0.5) return;
+    isSyncingRef.current = true;
+    el.scrollTop = scrollTop;
+    requestAnimationFrame(() => { isSyncingRef.current = false; });
   }, [scrollTop]);
 
   const viewportH = scrollerRef.current?.clientHeight ?? 800;
@@ -166,7 +172,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
       <div
         ref={scrollerRef}
         className="relative flex-1 overflow-auto"
-        onScroll={(e) => onScrollTopChange(e.currentTarget.scrollTop)}
+        onScroll={(e) => { if (!isSyncingRef.current) onScrollTopChange(e.currentTarget.scrollTop); }}
         role="grid"
         aria-rowcount={rows.length}
       >
@@ -216,10 +222,6 @@ function GridRow({
 }: GridRowProps) {
   const { task, depth, hasChildren, wbs } = row;
   const project = useProjectStore((s) => s.derived.project);
-  const resourceNames = task.assigneeIds
-    .map((id) => project.resources.find((r) => r.id === id)?.name)
-    .filter(Boolean)
-    .join(', ');
   const taskGroups = project.viewGroups.filter((g) => g.taskIds.includes(task.id));
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -287,7 +289,7 @@ function GridRow({
           ) : col.key === 'duration' ? (
             <span>{task.isMilestone ? '—' : `${task.durationDays}d`}</span>
           ) : col.key === 'assignee' ? (
-            <span className="truncate text-content-muted">{resourceNames || '—'}</span>
+            <AssigneeCell task={task} />
           ) : col.key === 'start' ? (
             <GridCell task={task} field="start" />
           ) : col.key === 'end' ? (
@@ -295,9 +297,7 @@ function GridRow({
           ) : col.key === 'progress' ? (
             <GridCell task={task} field="progress" />
           ) : col.key === 'priority' ? (
-            <span className={cn('rounded px-1.5 py-0.5 text-2xs', priorityClass(task.priority))}>
-              {PRIORITY_LABELS[task.priority]}
-            </span>
+            <PriorityCell task={task} />
           ) : null}
         </div>
       ))}
@@ -331,4 +331,133 @@ function compareTasks(a: Task, b: Task, key: SortKey): number {
     default:
       return 0;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Inline editors for priority and assignee columns
+// ---------------------------------------------------------------------------
+
+function PriorityCell({ task }: { task: Task }) {
+  const [editing, setEditing] = useState(false);
+  const updateTask = useProjectStore((s) => s.updateTask);
+
+  if (editing) {
+    return (
+      <select
+        autoFocus
+        value={task.priority}
+        onChange={(e) => {
+          updateTask(task.id, { priority: e.target.value as Priority });
+          setEditing(false);
+        }}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => { if (e.key === 'Escape') setEditing(false); e.stopPropagation(); }}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="h-6 w-full rounded border border-accent bg-surface px-1 text-xs text-content outline-none"
+      >
+        <option value="low">낮음</option>
+        <option value="medium">보통</option>
+        <option value="high">높음</option>
+        <option value="critical">긴급</option>
+      </select>
+    );
+  }
+
+  return (
+    <span
+      className={cn('cursor-pointer rounded px-1.5 py-0.5 text-2xs', priorityClass(task.priority))}
+      onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      title="더블클릭하여 우선순위 변경"
+    >
+      {PRIORITY_LABELS[task.priority]}
+    </span>
+  );
+}
+
+function AssigneeCell({ task }: { task: Task }) {
+  const [open, setOpen] = useState(false);
+  const [panelPos, setPanelPos] = useState({ top: 0, left: 0 });
+  const resources = useProjectStore((s) => s.derived.project.resources);
+  const updateTask = useProjectStore((s) => s.updateTask);
+
+  const displayText = task.assigneeIds
+    .map((id) => resources.find((r) => r.id === id)?.name)
+    .filter(Boolean)
+    .join(', ');
+
+  const openDropdown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setPanelPos({ top: rect.bottom + 2, left: rect.left });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      const panel = document.getElementById('assignee-panel-' + task.id);
+      if (panel && panel.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    // Slight delay so the opening click doesn't immediately close.
+    const tid = setTimeout(() => window.addEventListener('mousedown', close), 50);
+    return () => { clearTimeout(tid); window.removeEventListener('mousedown', close); };
+  }, [open, task.id]);
+
+  const toggle = (resourceId: string) => {
+    const current = new Set(task.assigneeIds);
+    if (current.has(resourceId)) current.delete(resourceId);
+    else current.add(resourceId);
+    updateTask(task.id, { assigneeIds: [...current] });
+  };
+
+  return (
+    <>
+      <span
+        className="w-full cursor-pointer truncate text-content-muted"
+        onDoubleClick={openDropdown}
+        title={displayText || '더블클릭하여 담당자 지정'}
+      >
+        {displayText || '—'}
+      </span>
+      {open && createPortal(
+        <div
+          id={'assignee-panel-' + task.id}
+          style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, zIndex: 9999 }}
+          className="min-w-[150px] rounded-md border border-border bg-surface-2 py-1 shadow-xl text-xs"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {resources.length === 0 ? (
+            <div className="px-3 py-2 text-content-muted">담당자가 없습니다</div>
+          ) : (
+            resources.map((r) => (
+              <label
+                key={r.id}
+                className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-surface-3"
+              >
+                <input
+                  type="checkbox"
+                  checked={task.assigneeIds.includes(r.id)}
+                  onChange={() => toggle(r.id)}
+                  className="h-3 w-3 accent-accent"
+                />
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ background: r.color ?? '#888' }}
+                />
+                {r.name}
+              </label>
+            ))
+          )}
+          <button
+            className="mt-1 w-full border-t border-border px-3 py-1.5 text-left text-content-muted hover:bg-surface-3"
+            onClick={() => setOpen(false)}
+          >
+            완료
+          </button>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
 }

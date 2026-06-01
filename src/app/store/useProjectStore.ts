@@ -39,6 +39,8 @@ interface ViewState {
   filterGroupId: string | null;
   /** Snapshot of task ids shown when `filterMode === 'focus'`. */
   focusIds: TaskId[];
+  /** Fine zoom multiplier applied on top of the preset day-width (Ctrl+Wheel). */
+  dayWidthScale: number;
 }
 
 interface ClipboardState {
@@ -83,6 +85,8 @@ interface ProjectStore {
   outdentTask: (id: TaskId) => void;
   moveTaskBy: (id: TaskId, deltaDays: number) => void;
   resizeTask: (id: TaskId, edge: 'start' | 'end', deltaDays: number) => void;
+  moveTaskUp: (id: TaskId) => void;
+  moveTaskDown: (id: TaskId) => void;
   duplicateSelected: () => void;
   copySelected: () => void;
   paste: () => void;
@@ -137,6 +141,8 @@ interface ProjectStore {
   /** Show all tasks, a specific view group, or the current selection only. */
   setViewFilter: (mode: FilterMode, groupId?: string | null) => void;
   clearViewFilter: () => void;
+  /** Multiply the fine-zoom dayWidth scale (Ctrl+Wheel). Clamped to [0.1, 10]. */
+  scaleDayWidth: (factor: number) => void;
 }
 
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -210,6 +216,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       filterMode: 'all',
       filterGroupId: null,
       focusIds: [],
+      dayWidthScale: 1.0,
     },
 
     loadProject(project) {
@@ -407,6 +414,34 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         }
         t.durationDays = Math.max(1, diffDaysISO(t.start, t.end) + 1);
         t.manuallyScheduled = true;
+      });
+    },
+
+    moveTaskUp(id) {
+      commit((d) => {
+        const t = d.tasks.find((x) => x.id === id);
+        if (!t) return;
+        const siblings = d.tasks
+          .filter((x) => x.parentId === t.parentId)
+          .sort((a, b) => a.order - b.order);
+        const idx = siblings.findIndex((x) => x.id === id);
+        if (idx <= 0) return;
+        const prev = siblings[idx - 1]!;
+        [t.order, prev.order] = [prev.order, t.order];
+      });
+    },
+
+    moveTaskDown(id) {
+      commit((d) => {
+        const t = d.tasks.find((x) => x.id === id);
+        if (!t) return;
+        const siblings = d.tasks
+          .filter((x) => x.parentId === t.parentId)
+          .sort((a, b) => a.order - b.order);
+        const idx = siblings.findIndex((x) => x.id === id);
+        if (idx >= siblings.length - 1) return;
+        const next = siblings[idx + 1]!;
+        [t.order, next.order] = [next.order, t.order];
       });
     },
 
@@ -734,6 +769,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
     clearViewFilter() {
       set((s) => ({ view: { ...s.view, filterMode: 'all', filterGroupId: null } }));
+    },
+    scaleDayWidth(factor) {
+      set((s) => ({
+        view: { ...s.view, dayWidthScale: Math.max(0.1, Math.min(10, s.view.dayWidthScale * factor)) },
+      }));
     },
   };
 });

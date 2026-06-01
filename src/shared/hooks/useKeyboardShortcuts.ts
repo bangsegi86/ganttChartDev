@@ -11,7 +11,8 @@ import { useProjectStore } from '@/app/store/useProjectStore';
  *   Ctrl/Cmd+S           Save
  *   Delete / Backspace   Delete selected
  *   Tab / Shift+Tab      Indent / Outdent (handled in grid)
- *   +/-                  Zoom in / out
+ *   +/-                  Zoom in / out (preset levels)
+ *   Alt+↑ / Alt+↓       Move selected task up / down within siblings
  */
 export function useKeyboardShortcuts(): void {
   useEffect(() => {
@@ -62,6 +63,16 @@ export function useKeyboardShortcuts(): void {
           e.preventDefault();
           store.deleteSelected();
         }
+        return;
+      }
+      if (e.altKey && e.key === 'ArrowUp') {
+        e.preventDefault();
+        for (const id of store.selectedTaskIds) store.moveTaskUp(id);
+        return;
+      }
+      if (e.altKey && e.key === 'ArrowDown') {
+        e.preventDefault();
+        for (const id of store.selectedTaskIds) store.moveTaskDown(id);
         return;
       }
       if (e.key === '+' || e.key === '=') {

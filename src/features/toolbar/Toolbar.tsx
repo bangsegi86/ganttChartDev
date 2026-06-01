@@ -1,4 +1,6 @@
 import {
+  ArrowDown,
+  ArrowUp,
   Ban,
   CalendarDays,
   Copy,
@@ -80,6 +82,8 @@ export function Toolbar({
   const duplicateSelected = useProjectStore((s) => s.duplicateSelected);
   const indentSelected = useSelectedAction('indentTask');
   const outdentSelected = useSelectedAction('outdentTask');
+  const moveUpSelected = useSelectedAction('moveTaskUp');
+  const moveDownSelected = useSelectedAction('moveTaskDown');
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
   const setZoom = useProjectStore((s) => s.setZoom);
@@ -148,6 +152,12 @@ export function Toolbar({
             <RotateCcw size={14} /> 복구
           </Button>
         )}
+        <Button size="sm" onClick={moveUpSelected} disabled={selectedCount === 0} title="위로 이동 (Alt+↑)">
+          <ArrowUp size={14} />
+        </Button>
+        <Button size="sm" onClick={moveDownSelected} disabled={selectedCount === 0} title="아래로 이동 (Alt+↓)">
+          <ArrowDown size={14} />
+        </Button>
         <Button size="sm" onClick={indentSelected} disabled={selectedCount === 0} title="들여쓰기 (Tab)">
           <Indent size={14} />
         </Button>
@@ -306,8 +316,8 @@ function firstSelectedId(): string | undefined {
   return ids.size ? [...ids][ids.size - 1] : undefined;
 }
 
-/** Apply an indent/outdent action to every selected task. */
-function useSelectedAction(action: 'indentTask' | 'outdentTask'): () => void {
+/** Apply a per-task action to every selected task. */
+function useSelectedAction(action: 'indentTask' | 'outdentTask' | 'moveTaskUp' | 'moveTaskDown'): () => void {
   const fn = useProjectStore((s) => s[action]);
   return () => {
     const ids = useProjectStore.getState().selectedTaskIds;

@@ -59,6 +59,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const barsRef = useRef<BarRect[]>([]);
   const dragRef = useRef<DragState>(NO_DRAG);
   const spaceHeldRef = useRef(false);
+  /** Prevents scroll-event feedback when we programmatically set scrollTop. */
+  const isSyncingRef = useRef(false);
 
   // DOM refs for imperative tooltip + toast (avoids React state churning).
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -71,14 +73,17 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const linkSourceId = useProjectStore((s) => s.linkSourceId);
 
   const project = derived.project;
-  const zoom = ZOOM_CONFIGS[view.zoom];
+  const zoomConfig = ZOOM_CONFIGS[view.zoom];
+  // Effective day width = preset × fine-zoom scale (Ctrl+Wheel).
+  const effectiveDayWidth = zoomConfig.dayWidth * view.dayWidthScale;
+  const zoom = { ...zoomConfig, dayWidth: effectiveDayWidth };
 
   const visibleTasks = useVisibleTasks();
   const rows = useMemo(() => buildVisibleRows(visibleTasks), [visibleTasks]);
   const rowIndex = useMemo(() => rowIndexMap(rows), [rows]);
   const timeline = useMemo(
-    () => buildTimeline(visibleTasks, project.startDate, zoom.dayWidth),
-    [visibleTasks, project.startDate, zoom.dayWidth],
+    () => buildTimeline(visibleTasks, project.startDate, effectiveDayWidth),
+    [visibleTasks, project.startDate, effectiveDayWidth],
   );
 
   const taskGroupColor = useMemo<Map<TaskId, string>>(() => {
@@ -270,18 +275,22 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   }, [setDomCursor]);
 
   const handleScroll = useCallback(() => {
+    // Skip events triggered by our own programmatic scrollTop assignments.
+    if (isSyncingRef.current) return;
     const scroller = scrollerRef.current;
     if (!scroller) return;
     onScrollTopChange(scroller.scrollTop);
     draw();
   }, [draw, onScrollTopChange]);
 
+  // Sync scrollTop prop → DOM (from DataGrid scroll events).
   useEffect(() => {
     const scroller = scrollerRef.current;
-    if (scroller && Math.abs(scroller.scrollTop - scrollTop) > 0.5) {
-      scroller.scrollTop = scrollTop;
-      draw();
-    }
+    if (!scroller || Math.abs(scroller.scrollTop - scrollTop) <= 0.5) return;
+    isSyncingRef.current = true;
+    scroller.scrollTop = scrollTop;
+    draw();
+    requestAnimationFrame(() => { isSyncingRef.current = false; });
   }, [scrollTop, draw]);
 
   // --------------------------------------------------------------------------
@@ -459,11 +468,20 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     if (bar) useProjectStore.getState().setInspecting(bar.taskId);
   };
 
-  const onWheel = (e: React.WheelEvent) => {
-    if (!e.ctrlKey && !e.metaKey) return;
-    e.preventDefault();
-    useProjectStore.getState().zoomBy(e.deltaY < 0 ? 1 : -1);
-  };
+  // Ctrl+Wheel: fine-zoom the day width without changing the level preset.
+  // Registered as non-passive so preventDefault() actually works.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const handler = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      useProjectStore.getState().scaleDayWidth(factor);
+    };
+    scroller.addEventListener('wheel', handler, { passive: false });
+    return () => scroller.removeEventListener('wheel', handler);
+  }, []);
 
   const contentHeight = rows.length * ROW_HEIGHT;
 
@@ -479,7 +497,6 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         ref={scrollerRef}
         className="relative flex-1 overflow-auto"
         onScroll={handleScroll}
-        onWheel={onWheel}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMoveHover}
         onDoubleClick={onDoubleClick}
