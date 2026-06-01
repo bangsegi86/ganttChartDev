@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, Diamond } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
-import { HEADER_HEIGHT, ROW_HEIGHT } from '@/features/gantt/layout';
+import { HEADER_HEIGHT, ROW_HEIGHT, SCROLL_BOTTOM_PADDING } from '@/features/gantt/layout';
 import { cn } from '@/shared/ui/cn';
 import type { Priority, Task } from '@/entities';
 import { GridCell } from './GridCell';
@@ -174,12 +174,12 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
       {/* Rows */}
       <div
         ref={scrollerRef}
-        className="relative flex-1 overflow-auto"
+        className="relative flex-1 overflow-x-scroll overflow-y-auto"
         onScroll={(e) => { if (!isSyncingRef.current) onScrollTopChange(e.currentTarget.scrollTop); }}
         role="grid"
         aria-rowcount={rows.length}
       >
-        <div style={{ height: rows.length * ROW_HEIGHT, minWidth: totalWidth, position: 'relative' }}>
+        <div style={{ height: rows.length * ROW_HEIGHT + SCROLL_BOTTOM_PADDING, minWidth: totalWidth, position: 'relative' }}>
           {visible.map((row, visIdx) => (
             <GridRow
               key={row.task.id}

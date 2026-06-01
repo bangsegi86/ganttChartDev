@@ -11,7 +11,7 @@ import {
   type BarRect,
   type GanttRenderModel,
 } from './renderGantt';
-import { HEADER_HEIGHT, RESIZE_HANDLE, ROW_HEIGHT } from './layout';
+import { HEADER_HEIGHT, RESIZE_HANDLE, ROW_HEIGHT, SCROLL_BOTTOM_PADDING } from './layout';
 import type { BaselineEntry, Task, TaskId } from '@/entities';
 import { addDaysISO } from '@/shared/date/dateUtils';
 
@@ -483,7 +483,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     return () => scroller.removeEventListener('wheel', handler);
   }, []);
 
-  const contentHeight = rows.length * ROW_HEIGHT;
+  const contentHeight = rows.length * ROW_HEIGHT + SCROLL_BOTTOM_PADDING;
 
   return (
     <div className="relative flex h-full min-w-0 flex-1 flex-col bg-surface">
