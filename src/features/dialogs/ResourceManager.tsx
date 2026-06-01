@@ -27,49 +27,56 @@ export function ResourceManager({ open, onClose }: { open: boolean; onClose: () 
 
   return (
     <Modal open={open} onClose={onClose} title="담당자 관리" width={560}>
-      <div className="mb-3 flex items-end gap-2">
-        <label className="flex flex-1 flex-col text-2xs text-content-muted">
-          이름
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content"
-          />
-        </label>
-        <label className="flex flex-col text-2xs text-content-muted">
-          역할
-          <input
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            className="mt-0.5 h-8 w-24 rounded border border-border bg-surface px-2 text-xs text-content"
-          />
-        </label>
-        <label className="flex flex-col text-2xs text-content-muted">
-          시간/일
-          <input
-            type="number"
-            value={capacity}
-            onChange={(e) => setCapacity(Number(e.target.value))}
-            className="mt-0.5 h-8 w-16 rounded border border-border bg-surface px-2 text-xs text-content"
-          />
-        </label>
-        <div className="flex flex-col text-2xs text-content-muted">
-          색상
-          <div className="mt-1 flex gap-1">
-            {SWATCHES.map((c) => (
-              <button
-                key={c}
-                onClick={() => setColor(c)}
-                className="h-6 w-6 rounded-full border-2"
-                style={{ background: c, borderColor: color === c ? '#fff' : 'transparent' }}
-                aria-label={`색상 ${c}`}
-              />
-            ))}
-          </div>
+      <div className="mb-3 space-y-2">
+        {/* Row 1: text fields */}
+        <div className="flex gap-2">
+          <label className="flex flex-1 flex-col text-2xs text-content-muted">
+            이름
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
+              className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content"
+            />
+          </label>
+          <label className="flex flex-col text-2xs text-content-muted">
+            역할
+            <input
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="mt-0.5 h-8 w-28 rounded border border-border bg-surface px-2 text-xs text-content"
+            />
+          </label>
+          <label className="flex flex-col text-2xs text-content-muted">
+            시간/일
+            <input
+              type="number"
+              value={capacity}
+              onChange={(e) => setCapacity(Number(e.target.value))}
+              className="mt-0.5 h-8 w-16 rounded border border-border bg-surface px-2 text-xs text-content"
+            />
+          </label>
         </div>
-        <Button size="sm" variant="accent" onClick={add}>
-          추가
-        </Button>
+        {/* Row 2: colour swatches + add button */}
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col text-2xs text-content-muted">
+            색상
+            <div className="mt-1 flex gap-1.5">
+              {SWATCHES.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setColor(c)}
+                  className="h-6 w-6 rounded-full border-2"
+                  style={{ background: c, borderColor: color === c ? '#fff' : 'transparent' }}
+                  aria-label={`색상 ${c}`}
+                />
+              ))}
+            </div>
+          </div>
+          <Button size="sm" variant="accent" onClick={add}>
+            추가
+          </Button>
+        </div>
       </div>
 
       <div className="max-h-72 overflow-auto rounded border border-border">

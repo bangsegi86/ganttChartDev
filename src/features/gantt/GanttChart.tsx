@@ -245,7 +245,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     }
   }, [buildModel]);
 
-  useEffect(() => { draw(); }, [draw, scrollTop]);
+  useEffect(() => { draw(); }, [draw]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
