@@ -50,15 +50,29 @@ describe('project store (integration)', () => {
     expect(bad).toBe(false);
   });
 
-  it('deletes selected tasks together with their dependencies', () => {
+  it('soft-deletes (cancels) selected tasks on first delete, then hard-deletes on confirmation', () => {
     const store = useProjectStore.getState();
     const leaf = store.derived.project.tasks.find((t) => t.parentId && !t.isMilestone)!;
     const before = store.derived.project.tasks.length;
+
+    // First delete → cancels the task, does NOT remove it.
     useProjectStore.getState().selectTask(leaf.id);
     useProjectStore.getState().deleteSelected();
-    const after = useProjectStore.getState().derived.project;
-    expect(after.tasks.length).toBeLessThan(before);
-    expect(after.dependencies.some((d) => d.fromId === leaf.id || d.toId === leaf.id)).toBe(false);
+    const afterCancel = useProjectStore.getState().derived.project;
+    expect(afterCancel.tasks.length).toBe(before);
+    expect(afterCancel.tasks.find((t) => t.id === leaf.id)!.cancelled).toBe(true);
+
+    // Second delete (task is already cancelled) → sets confirmDeletePending.
+    useProjectStore.getState().selectTask(leaf.id);
+    useProjectStore.getState().deleteSelected();
+    expect(useProjectStore.getState().confirmDeletePending).toBe(true);
+
+    // Confirming hard-delete → removes task and its dependencies.
+    useProjectStore.getState().hardDeleteSelected();
+    const afterHard = useProjectStore.getState().derived.project;
+    expect(afterHard.tasks.length).toBeLessThan(before);
+    expect(afterHard.dependencies.some((d) => d.fromId === leaf.id || d.toId === leaf.id)).toBe(false);
+    expect(useProjectStore.getState().confirmDeletePending).toBe(false);
   });
 
   it('creates a view group from the selection and filters to it', () => {

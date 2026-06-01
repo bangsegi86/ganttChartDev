@@ -59,6 +59,8 @@ interface ProjectStore {
   inspectingTaskId: TaskId | null;
   linkSourceId: TaskId | null; // task currently being linked by drag
   clipboard: ClipboardState | null;
+  /** True when all selected tasks are already cancelled and awaiting hard-delete confirmation. */
+  confirmDeletePending: boolean;
   // --- view ---
   view: ViewState;
   dirty: boolean;
@@ -73,6 +75,9 @@ interface ProjectStore {
   updateTask: (id: TaskId, patch: Partial<Task>) => void;
   addTask: (afterId?: TaskId) => void;
   deleteSelected: () => void;
+  hardDeleteSelected: () => void;
+  uncancelSelected: () => void;
+  cancelConfirmDelete: () => void;
   toggleCollapse: (id: TaskId) => void;
   indentTask: (id: TaskId) => void;
   outdentTask: (id: TaskId) => void;
@@ -192,6 +197,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     inspectingTaskId: null,
     linkSourceId: null,
     clipboard: null,
+    confirmDeletePending: false,
     dirty: false,
     recoveryAvailable: false,
     view: {
@@ -269,6 +275,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           manuallyScheduled: false,
           order,
           color: null,
+          cancelled: false,
         });
       });
       set({ selectedTaskIds: new Set([id]), editingTaskId: id });
@@ -277,8 +284,35 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     deleteSelected() {
       const ids = get().selectedTaskIds;
       if (ids.size === 0) return;
+      const selectedTasks = get().derived.project.tasks.filter((t) => ids.has(t.id));
+      // If every selected task is already cancelled → ask for permanent-delete confirmation.
+      if (selectedTasks.length > 0 && selectedTasks.every((t) => t.cancelled)) {
+        set({ confirmDeletePending: true });
+        return;
+      }
+      // Otherwise soft-delete: mark selected tasks (and their descendants) as cancelled.
       commit((d) => {
-        // Collect descendants of selected tasks too.
+        const toCancel = new Set<TaskId>(ids);
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const t of d.tasks) {
+            if (t.parentId && toCancel.has(t.parentId) && !toCancel.has(t.id)) {
+              toCancel.add(t.id);
+              grew = true;
+            }
+          }
+        }
+        for (const t of d.tasks) {
+          if (toCancel.has(t.id)) t.cancelled = true;
+        }
+      });
+    },
+
+    hardDeleteSelected() {
+      const ids = get().selectedTaskIds;
+      if (ids.size === 0) return;
+      commit((d) => {
         const toDelete = new Set<TaskId>(ids);
         let grew = true;
         while (grew) {
@@ -295,7 +329,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           (dep) => !toDelete.has(dep.fromId) && !toDelete.has(dep.toId),
         );
       });
-      set({ selectedTaskIds: new Set() });
+      set({ selectedTaskIds: new Set(), confirmDeletePending: false });
+    },
+
+    uncancelSelected() {
+      const ids = get().selectedTaskIds;
+      if (ids.size === 0) return;
+      commit((d) => {
+        for (const t of d.tasks) {
+          if (ids.has(t.id)) t.cancelled = false;
+        }
+      });
+    },
+
+    cancelConfirmDelete() {
+      set({ confirmDeletePending: false });
     },
 
     toggleCollapse(id) {
@@ -440,6 +488,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
             manuallyScheduled: !!(validISO(rawStart) && validISO(rawEnd)),
             order: baseOrder + i,
             color: null,
+            cancelled: false,
           });
         });
       });

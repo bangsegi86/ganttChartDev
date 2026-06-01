@@ -173,6 +173,7 @@ function drawBar(
   const x = timeline.xFor(t.start) - scrollLeft;
   const isSummary = row.hasChildren;
   const critical = showCritical && (schedules.get(t.id)?.isCritical ?? false);
+  const cancelled = t.cancelled ?? false;
 
   // Baseline ghost bar (drawn behind the live bar).
   if (showBaseline && baseline) {
@@ -189,7 +190,8 @@ function drawBar(
     const cx = x + timeline.dayWidth / 2;
     const cy = y + ROW_HEIGHT / 2;
     const r = BAR_HEIGHT / 2;
-    ctx.fillStyle = critical ? palette.critical : '#8b5cf6';
+    if (cancelled) { ctx.save(); ctx.globalAlpha = 0.4; }
+    ctx.fillStyle = cancelled ? palette.textMuted : (critical ? palette.critical : '#8b5cf6');
     ctx.beginPath();
     ctx.moveTo(cx, cy - r);
     ctx.lineTo(cx + r, cy);
@@ -197,6 +199,17 @@ function drawBar(
     ctx.lineTo(cx - r, cy);
     ctx.closePath();
     ctx.fill();
+    if (cancelled) {
+      ctx.restore();
+      ctx.strokeStyle = palette.textMuted;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 2]);
+      ctx.beginPath();
+      ctx.moveTo(cx - r, cy);
+      ctx.lineTo(cx + r, cy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     if (selected.has(t.id)) strokeSelection(ctx, cx - r, cy - r, r * 2, r * 2, palette);
     return { taskId: t.id, x: cx - r, y: cy - r, w: r * 2, h: r * 2, isMilestone: true, isSummary };
   }
@@ -204,19 +217,24 @@ function drawBar(
   const w = Math.max(timeline.dayWidth, durationPx(timeline, t.start, t.end));
   const barY = y + BAR_VPAD;
 
+  // Draw the bar at reduced opacity when cancelled.
+  if (cancelled) { ctx.save(); ctx.globalAlpha = 0.45; }
+
   if (isSummary) {
     // Summary bracket bar.
-    ctx.fillStyle = palette.text;
+    ctx.fillStyle = cancelled ? palette.textMuted : palette.text;
     ctx.fillRect(x, barY + 4, w, BAR_HEIGHT - 8);
     ctx.fillRect(x, barY, 3, BAR_HEIGHT);
     ctx.fillRect(x + w - 3, barY, 3, BAR_HEIGHT);
   } else {
-    const base = t.color ?? taskGroupColor.get(t.id) ?? (critical ? palette.critical : PRIORITY_COLORS[t.priority]);
+    const base = cancelled
+      ? '#9ca3af' // gray-400 for cancelled tasks
+      : t.color ?? taskGroupColor.get(t.id) ?? (critical ? palette.critical : PRIORITY_COLORS[t.priority]);
     roundRect(ctx, x, barY, w, BAR_HEIGHT, 4);
     ctx.fillStyle = base;
     ctx.fill();
-    // Progress overlay.
-    if (t.progress > 0) {
+    // Progress overlay (skip for cancelled).
+    if (!cancelled && t.progress > 0) {
       const pw = (w * Math.min(100, t.progress)) / 100;
       ctx.save();
       roundRect(ctx, x, barY, w, BAR_HEIGHT, 4);
@@ -225,12 +243,28 @@ function drawBar(
       ctx.fillRect(x, barY, pw, BAR_HEIGHT);
       ctx.restore();
     }
-    if (critical) {
+    if (!cancelled && critical) {
       ctx.strokeStyle = palette.critical;
       ctx.lineWidth = 1.5;
       roundRect(ctx, x, barY, w, BAR_HEIGHT, 4);
       ctx.stroke();
     }
+  }
+
+  if (cancelled) ctx.restore();
+
+  // Strikethrough line for cancelled tasks.
+  if (cancelled) {
+    ctx.save();
+    ctx.strokeStyle = palette.textMuted;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x, barY + BAR_HEIGHT / 2);
+    ctx.lineTo(x + w, barY + BAR_HEIGHT / 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
   }
 
   // Label drawn to the right of the bar when there is room.

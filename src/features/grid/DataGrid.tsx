@@ -234,6 +234,7 @@ function GridRow({
     <div
       className={cn(
         'absolute left-0 flex w-full items-stretch border-b border-border text-xs',
+        task.cancelled && 'opacity-50',
         selected ? 'bg-accent/15' : hasChildren ? 'bg-surface-2/40' : 'hover:bg-surface-2/60',
       )}
       style={{ top, height: ROW_HEIGHT }}
@@ -272,7 +273,7 @@ function GridRow({
                   {task.isMilestone && <Diamond size={11} className="text-violet-400" />}
                 </span>
               )}
-              <GridCell task={task} field="name" className={cn(hasChildren && 'font-semibold')} />
+              <GridCell task={task} field="name" className={cn(hasChildren && 'font-semibold', task.cancelled && 'line-through text-content-muted')} />
               {taskGroups.length > 0 && (
                 <div className="ml-1 flex shrink-0 gap-0.5" title={taskGroups.map((g) => g.name).join(', ')}>
                   {taskGroups.slice(0, 4).map((g) => (

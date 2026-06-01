@@ -16,6 +16,7 @@ import { CalendarSettings } from '@/features/dialogs/CalendarSettings';
 import { BaselineManager } from '@/features/dialogs/BaselineManager';
 import { ViewGroupManager } from '@/features/dialogs/ViewGroupManager';
 import { TaskInspector } from '@/features/dialogs/TaskInspector';
+import { ConfirmDeleteDialog } from '@/features/dialogs/ConfirmDeleteDialog';
 import { ViewFilterBanner } from '@/features/view/ViewFilterBanner';
 import { createDemoProject } from '@/data/sampleData';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
@@ -110,6 +111,7 @@ export default function App() {
       <BaselineManager open={dialog === 'baselines'} onClose={() => setDialog(null)} />
       <ViewGroupManager open={dialog === 'viewGroups'} onClose={() => setDialog(null)} />
       <TaskInspector />
+      <ConfirmDeleteDialog />
     </div>
   );
 }

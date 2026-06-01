@@ -1,4 +1,5 @@
 import {
+  Ban,
   CalendarDays,
   Copy,
   Download,
@@ -12,6 +13,7 @@ import {
   Outdent,
   Plus,
   Redo2,
+  RotateCcw,
   Route,
   Save,
   Sun,
@@ -61,8 +63,20 @@ export function Toolbar({
   const selectedCount = useProjectStore((s) => s.selectedTaskIds.size);
   const dirty = useProjectStore((s) => s.dirty);
 
+  const tasks = useProjectStore((s) => s.derived.project.tasks);
+  const selectedTaskIds = useProjectStore((s) => s.selectedTaskIds);
+  // Derive cancel state for adaptive button labels.
+  const cancelState = (() => {
+    if (selectedTaskIds.size === 0) return 'none' as const;
+    const sel = tasks.filter((t) => selectedTaskIds.has(t.id));
+    if (sel.length === 0) return 'none' as const;
+    if (sel.every((t) => t.cancelled)) return 'all-cancelled' as const;
+    return 'has-active' as const;
+  })();
+
   const addTask = useProjectStore((s) => s.addTask);
   const deleteSelected = useProjectStore((s) => s.deleteSelected);
+  const uncancelSelected = useProjectStore((s) => s.uncancelSelected);
   const duplicateSelected = useProjectStore((s) => s.duplicateSelected);
   const indentSelected = useSelectedAction('indentTask');
   const outdentSelected = useSelectedAction('outdentTask');
@@ -103,9 +117,37 @@ export function Toolbar({
         <Button size="sm" onClick={duplicateSelected} disabled={selectedCount === 0} title="복제 (Ctrl+D)">
           <Copy size={14} />
         </Button>
-        <Button size="sm" variant="danger" onClick={deleteSelected} disabled={selectedCount === 0} title="삭제 (Del)">
-          <Trash2 size={14} />
-        </Button>
+        {cancelState === 'all-cancelled' ? (
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={deleteSelected}
+            disabled={selectedCount === 0}
+            title="영구 삭제 (Del) — 취소된 일정을 완전히 제거합니다"
+          >
+            <Trash2 size={14} /> 삭제
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={deleteSelected}
+            disabled={selectedCount === 0}
+            title="취소 처리 (Del) — 한 번 더 누르면 영구 삭제"
+          >
+            <Ban size={14} /> 취소
+          </Button>
+        )}
+        {cancelState === 'all-cancelled' && (
+          <Button
+            size="sm"
+            onClick={uncancelSelected}
+            disabled={selectedCount === 0}
+            title="취소 해제 — 일정을 다시 활성화합니다"
+          >
+            <RotateCcw size={14} /> 복구
+          </Button>
+        )}
         <Button size="sm" onClick={indentSelected} disabled={selectedCount === 0} title="들여쓰기 (Tab)">
           <Indent size={14} />
         </Button>

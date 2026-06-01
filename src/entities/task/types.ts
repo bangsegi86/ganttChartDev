@@ -46,6 +46,8 @@ export interface Task {
   order: number;
   /** Hex bar colour override; falls back to priority colour when null. */
   color: string | null;
+  /** Soft-deleted: task is visually struck-through and cannot be permanent-deleted until confirmed. */
+  cancelled: boolean;
 }
 
 /** Computed scheduling metadata produced by the critical-path engine. */

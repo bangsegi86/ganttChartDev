@@ -21,6 +21,7 @@ function task(id: string, durationDays: number, parentId: string | null = null):
     manuallyScheduled: false,
     order: 0,
     color: null,
+    cancelled: false,
   };
 }
 

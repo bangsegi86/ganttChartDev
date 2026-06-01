@@ -20,9 +20,14 @@ export interface DerivedSchedule {
  * separate from the store so it is easy to unit test and reuse.
  */
 export function recalc(input: Project): DerivedSchedule {
-  const { tasks, cyclicTaskIds } = scheduleProject(input);
   // Normalise optional fields that may be absent on older saved documents.
-  const project: Project = { ...input, tasks, viewGroups: input.viewGroups ?? [] };
+  const normalized: Project = {
+    ...input,
+    viewGroups: input.viewGroups ?? [],
+    tasks: input.tasks.map((t) => ({ ...t, cancelled: t.cancelled ?? false })),
+  };
+  const { tasks, cyclicTaskIds } = scheduleProject(normalized);
+  const project: Project = { ...normalized, tasks };
   const cpm = computeCriticalPath(tasks, project.dependencies);
   const projectFinish = maxISO(tasks.map((t) => t.end));
   return {

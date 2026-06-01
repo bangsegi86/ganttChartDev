@@ -38,6 +38,7 @@ function task(partial: Partial<Task> & Pick<Task, 'id' | 'name'>): Task {
     manuallyScheduled: false,
     order: 0,
     color: null,
+    cancelled: false,
     ...partial,
   };
 }

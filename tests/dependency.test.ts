@@ -26,6 +26,7 @@ function task(id: string, parentId: string | null = null): Task {
     manuallyScheduled: false,
     order: 0,
     color: null,
+    cancelled: false,
   };
 }
 
