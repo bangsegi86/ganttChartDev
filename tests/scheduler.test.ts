@@ -43,6 +43,7 @@ function makeProject(tasks: Task[], dependencies: Project['dependencies']): Proj
     baselines: [],
     activeBaselineId: null,
     viewGroups: [],
+    markers: [],
   };
 }
 

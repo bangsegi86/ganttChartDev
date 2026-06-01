@@ -183,9 +183,9 @@ function buildKoreanMenu(): void {
           { type: 'separator' as const },
         ]
       : []),
-    { role: 'resetZoom' as const, label: '기본 크기' },
-    { role: 'zoomIn' as const, label: '확대' },
-    { role: 'zoomOut' as const, label: '축소' },
+    { label: '간트 확대', accelerator: 'CmdOrCtrl+=', click: () => send('menu:zoom-in') },
+    { label: '간트 축소', accelerator: 'CmdOrCtrl+-', click: () => send('menu:zoom-out') },
+    { label: '간트 비율 초기화', accelerator: 'CmdOrCtrl+0', click: () => send('menu:zoom-reset') },
     { type: 'separator' as const },
     { role: 'togglefullscreen' as const, label: '전체 화면' },
   ];

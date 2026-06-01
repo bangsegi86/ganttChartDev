@@ -1,4 +1,4 @@
-import type { Dependency, TaskId, TaskSchedule, BaselineEntry } from '@/entities';
+import type { ChartMarker, Dependency, TaskId, TaskSchedule, BaselineEntry } from '@/entities';
 import { addDaysISO, toDate, weekdayOf, type ISODate } from '@/shared/date/dateUtils';
 import { Timeline } from './timeline';
 import { BAR_HEIGHT, BAR_VPAD, ROW_HEIGHT } from './layout';
@@ -31,6 +31,8 @@ export interface GanttRenderModel {
   dragPreview: { taskId: TaskId; deltaDays: number; mode: string } | null;
   /** Currently selected dependency id (for highlight). */
   selectedDepId?: string | null;
+  /** User-defined vertical marker lines. */
+  markers: ChartMarker[];
 }
 
 /** Geometry of a rendered bar; cached for hit-testing. */
@@ -73,6 +75,7 @@ export function renderGanttBody(
   drawColumnShading(ctx, model, viewportW, viewportH, scrollLeft);
   drawGridLines(ctx, model, viewportW, viewportH, scrollLeft, scrollTop);
   drawTodayLine(ctx, model, viewportH, scrollLeft);
+  drawMarkers(ctx, model, viewportH, scrollLeft);
 
   // Visible row window.
   const firstRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 1);
@@ -168,6 +171,39 @@ function drawTodayLine(
   ctx.lineTo(x, viewportH);
   ctx.stroke();
   ctx.setLineDash([]);
+}
+
+/** User-defined vertical marker lines (e.g. 오픈일, 마감일). */
+function drawMarkers(
+  ctx: CanvasRenderingContext2D,
+  model: GanttRenderModel,
+  viewportH: number,
+  scrollLeft: number,
+): void {
+  const { timeline, markers } = model;
+  if (!markers.length) return;
+  ctx.save();
+  ctx.font = 'bold 10px ui-sans-serif, system-ui';
+  ctx.textBaseline = 'top';
+  for (const m of markers) {
+    if (m.date < timeline.start || m.date > timeline.end) continue;
+    const x = Math.round(timeline.xFor(m.date) + timeline.dayWidth / 2 - scrollLeft);
+    ctx.strokeStyle = m.color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, 0);
+    ctx.lineTo(x + 0.5, viewportH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Label background
+    const labelW = ctx.measureText(m.label).width + 6;
+    ctx.fillStyle = m.color + '22'; // 13% opacity background
+    ctx.fillRect(x + 2, 2, labelW, 14);
+    ctx.fillStyle = m.color;
+    ctx.fillText(m.label, x + 5, 4);
+  }
+  ctx.restore();
 }
 
 /** Draw a single task/summary/milestone bar and return its geometry. */

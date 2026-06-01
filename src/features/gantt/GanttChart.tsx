@@ -225,6 +225,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         ? { taskId: drag.taskId!, deltaDays: drag.deltaDays, mode: drag.mode! }
         : null,
       selectedDepId: selectedDepIdRef.current,
+      markers: project.markers ?? [],
     };
   }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected, view, baselineMap, taskGroupColor, taskAssigneeColor]);
 
@@ -241,7 +242,9 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     const st = scroller.scrollTop;
 
     setCanvasSize(body, vw, vh, dpr);
-    body.style.transform = `translate(${sl}px, ${st}px)`;
+    // Round to the nearest physical pixel to prevent sub-pixel GPU blurring.
+    const rpx = (v: number) => Math.round(v * dpr) / dpr;
+    body.style.transform = `translate(${rpx(sl)}px, ${rpx(st)}px)`;
     const bctx = body.getContext('2d')!;
     bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const model = buildModel();
@@ -579,7 +582,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         <canvas
           ref={bodyCanvasRef}
           className="pointer-events-none absolute left-0 top-0"
-          style={{ willChange: 'transform' }}
+          style={{ willChange: 'transform', imageRendering: 'pixelated' }}
         />
 
         {/* Link-drag hint */}

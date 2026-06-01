@@ -41,6 +41,7 @@ function project(tasks: Task[]): Project {
     baselines: [],
     activeBaselineId: null,
     viewGroups: [],
+    markers: [],
   };
 }
 

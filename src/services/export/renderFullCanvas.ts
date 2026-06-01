@@ -69,6 +69,7 @@ export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
     taskGroupColor: buildTaskGroupColor(project),
     taskAssigneeColor: buildTaskAssigneeColor(project),
     dragPreview: null,
+    markers: project.markers ?? [],
   };
 
   // Background.

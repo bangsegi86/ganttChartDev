@@ -18,6 +18,7 @@ import { ViewGroupManager } from '@/features/dialogs/ViewGroupManager';
 import { TaskInspector } from '@/features/dialogs/TaskInspector';
 import { ConfirmDeleteDialog } from '@/features/dialogs/ConfirmDeleteDialog';
 import { ProjectManagerDialog } from '@/features/dialogs/ProjectManagerDialog';
+import { MarkerManager } from '@/features/dialogs/MarkerManager';
 import { ViewFilterBanner } from '@/features/view/ViewFilterBanner';
 import { createDemoProject } from '@/data/sampleData';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
@@ -26,7 +27,7 @@ import { bridge } from '@/shared/bridge';
 import { exportExcel } from '@/services/export/exportExcel';
 import { exportPdf, exportPng } from '@/services/export/exportImage';
 
-type DialogKind = 'projects' | 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | null;
+type DialogKind = 'projects' | 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | 'markers' | null;
 
 /**
  * Application shell. Wires the toolbar, split-pane grid+gantt (or resource
@@ -89,6 +90,12 @@ export default function App() {
         await exportPng({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
       } else if (action === 'menu:export-pdf') {
         await exportPdf({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
+      } else if (action === 'menu:zoom-in') {
+        state.scaleDayWidth(1.2);
+      } else if (action === 'menu:zoom-out') {
+        state.scaleDayWidth(1 / 1.2);
+      } else if (action === 'menu:zoom-reset') {
+        state.setDayWidthScale(1.0);
       }
     });
   }, []);
@@ -102,6 +109,7 @@ export default function App() {
         onOpenCalendar={() => setDialog('calendar')}
         onOpenBaselines={() => setDialog('baselines')}
         onOpenViewGroups={() => setDialog('viewGroups')}
+        onOpenMarkers={() => setDialog('markers')}
       />
 
       {recovery && (
@@ -142,6 +150,7 @@ export default function App() {
       <CalendarSettings open={dialog === 'calendar'} onClose={() => setDialog(null)} />
       <BaselineManager open={dialog === 'baselines'} onClose={() => setDialog(null)} />
       <ViewGroupManager open={dialog === 'viewGroups'} onClose={() => setDialog(null)} />
+      <MarkerManager open={dialog === 'markers'} onClose={() => setDialog(null)} />
       <TaskInspector />
       <ConfirmDeleteDialog />
     </div>

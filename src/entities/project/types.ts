@@ -5,6 +5,7 @@ import type { Holiday } from '../holiday/types';
 import type { WorkCalendar } from '../calendar/types';
 import type { Baseline } from '../baseline/types';
 import type { ViewGroup } from '../viewGroup/types';
+import type { ChartMarker } from '../chartMarker/types';
 
 /** Schema version enables forward-compatible migrations of saved files. */
 export const PROJECT_SCHEMA_VERSION = 1;
@@ -31,4 +32,6 @@ export interface Project {
   activeBaselineId: string | null;
   /** User-defined view groups (보기 그룹) for focused viewing. */
   viewGroups: ViewGroup[];
+  /** Vertical marker lines drawn on the gantt chart. */
+  markers: ChartMarker[];
 }

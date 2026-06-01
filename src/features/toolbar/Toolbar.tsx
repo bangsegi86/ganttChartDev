@@ -13,6 +13,7 @@ import {
   Image,
   Indent,
   Layers,
+  MapPin,
   Moon,
   Outdent,
   Plus,
@@ -49,6 +50,7 @@ interface ToolbarProps {
   onOpenCalendar: () => void;
   onOpenBaselines: () => void;
   onOpenViewGroups: () => void;
+  onOpenMarkers: () => void;
 }
 
 /** Top command bar. Groups document, edit, view and export actions. */
@@ -59,6 +61,7 @@ export function Toolbar({
   onOpenCalendar,
   onOpenBaselines,
   onOpenViewGroups,
+  onOpenMarkers,
 }: ToolbarProps) {
   const view = useProjectStore((s) => s.view);
   const viewGroups = useProjectStore((s) => s.derived.project.viewGroups);
@@ -221,6 +224,9 @@ export function Toolbar({
         </Button>
         <Button size="sm" onClick={onOpenBaselines} title="베이스라인">
           <FlagTriangleRight size={14} /> 베이스라인
+        </Button>
+        <Button size="sm" onClick={onOpenMarkers} title="차트 마커">
+          <MapPin size={14} /> 마커
         </Button>
       </Group>
 

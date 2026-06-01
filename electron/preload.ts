@@ -19,7 +19,10 @@ type MenuAction =
   | 'menu:save'
   | 'menu:export-excel'
   | 'menu:export-png'
-  | 'menu:export-pdf';
+  | 'menu:export-pdf'
+  | 'menu:zoom-in'
+  | 'menu:zoom-out'
+  | 'menu:zoom-reset';
 
 const bridge = {
   menu: {
@@ -31,6 +34,9 @@ const bridge = {
         'menu:export-excel',
         'menu:export-png',
         'menu:export-pdf',
+        'menu:zoom-in',
+        'menu:zoom-out',
+        'menu:zoom-reset',
       ];
       const listeners = actions.map((ch) => {
         const fn = () => callback(ch);

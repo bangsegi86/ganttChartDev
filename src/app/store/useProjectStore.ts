@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 import type {
   Baseline,
+  ChartMarker,
   Dependency,
   DependencyType,
   Holiday,
@@ -123,6 +124,11 @@ interface ProjectStore {
   addTasksToGroup: (groupId: string, taskIds: TaskId[]) => void;
   removeTasksFromGroup: (groupId: string, taskIds: TaskId[]) => void;
 
+  // --- chart markers (세로 마커 선) ---
+  addMarker: (marker: Omit<ChartMarker, 'id'>) => void;
+  updateMarker: (id: string, patch: Partial<Omit<ChartMarker, 'id'>>) => void;
+  removeMarker: (id: string) => void;
+
   // --- history ops ---
   undo: () => void;
   redo: () => void;
@@ -172,6 +178,7 @@ function emptyProject(): Project {
     baselines: [],
     activeBaselineId: null,
     viewGroups: [],
+    markers: [],
   };
 }
 
@@ -259,7 +266,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     loadProject(project) {
-      const derived = recalc(project);
+      const derived = recalc({ ...project, markers: project.markers ?? [] });
       set((s) => ({
         derived,
         project: derived.project,
@@ -773,6 +780,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         const g = d.viewGroups.find((x) => x.id === groupId);
         if (g) g.taskIds = g.taskIds.filter((t) => !drop.has(t));
       });
+    },
+
+    // --- chart markers ---
+    addMarker(marker) {
+      commit((d) => {
+        d.markers = d.markers ?? [];
+        d.markers.push({ ...marker, id: nanoid() });
+      });
+    },
+    updateMarker(id, patch) {
+      commit((d) => {
+        const m = (d.markers ?? []).find((x) => x.id === id);
+        if (m) Object.assign(m, patch);
+      });
+    },
+    removeMarker(id) {
+      commit((d) => { d.markers = (d.markers ?? []).filter((m) => m.id !== id); });
     },
 
     // --- history ---
