@@ -22,6 +22,9 @@ import { ViewFilterBanner } from '@/features/view/ViewFilterBanner';
 import { createDemoProject } from '@/data/sampleData';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
 import { Button } from '@/shared/ui/Button';
+import { bridge } from '@/shared/bridge';
+import { exportExcel } from '@/services/export/exportExcel';
+import { exportPdf, exportPng } from '@/services/export/exportImage';
 
 type DialogKind = 'projects' | 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | null;
 
@@ -62,6 +65,32 @@ export default function App() {
     const handler = () => void useProjectStore.getState().flushAutosave();
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
+  }, []);
+
+  // Native app menu → dispatch to store / toolbar actions.
+  useEffect(() => {
+    return bridge().menu.onAction(async (action) => {
+      const state = useProjectStore.getState();
+      const { project, schedules } = state.derived;
+      const name = project.name || '간트';
+      if (action === 'menu:new-project') {
+        state.newProject();
+      } else if (action === 'menu:open-projects') {
+        setDialog('projects');
+      } else if (action === 'menu:save') {
+        void state.saveProject();
+      } else if (action === 'menu:export-excel') {
+        await exportExcel(project, name, {
+          project, schedules,
+          zoom: state.view.zoom, theme: state.view.theme,
+          showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline,
+        });
+      } else if (action === 'menu:export-png') {
+        await exportPng({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
+      } else if (action === 'menu:export-pdf') {
+        await exportPdf({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
+      }
+    });
   }, []);
 
   return (

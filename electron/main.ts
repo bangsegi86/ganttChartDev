@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs/promises';
@@ -147,7 +147,103 @@ function sanitize(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
-app.whenReady().then(createWindow);
+function send(channel: string) {
+  mainWindow?.webContents.send(channel);
+}
+
+type MI = Electron.MenuItemConstructorOptions;
+
+function buildKoreanMenu(): void {
+  const isMac = process.platform === 'darwin';
+
+  const fileSubmenu: MI[] = [
+    { label: '새 프로젝트', accelerator: 'CmdOrCtrl+N', click: () => send('menu:new-project') },
+    { label: '열기…', accelerator: 'CmdOrCtrl+O', click: () => send('menu:open-projects') },
+    { type: 'separator' },
+    { label: '저장', accelerator: 'CmdOrCtrl+S', click: () => send('menu:save') },
+    { type: 'separator' },
+    {
+      label: '내보내기',
+      submenu: [
+        { label: '엑셀 (.xlsx)', click: () => send('menu:export-excel') },
+        { label: 'PNG 이미지', click: () => send('menu:export-png') },
+        { label: 'PDF 문서', click: () => send('menu:export-pdf') },
+      ],
+    },
+    { type: 'separator' },
+    isMac ? { role: 'close' as const, label: '창 닫기' } : { role: 'quit' as const, label: '종료' },
+  ];
+
+  const viewSubmenu: MI[] = [
+    ...(VITE_DEV_SERVER_URL
+      ? [
+          { role: 'reload' as const, label: '새로 고침' },
+          { role: 'forceReload' as const, label: '강제 새로 고침' },
+          { role: 'toggleDevTools' as const, label: '개발자 도구' },
+          { type: 'separator' as const },
+        ]
+      : []),
+    { role: 'resetZoom' as const, label: '기본 크기' },
+    { role: 'zoomIn' as const, label: '확대' },
+    { role: 'zoomOut' as const, label: '축소' },
+    { type: 'separator' as const },
+    { role: 'togglefullscreen' as const, label: '전체 화면' },
+  ];
+
+  const windowSubmenu: MI[] = [
+    { role: 'minimize' as const, label: '최소화' },
+    { role: 'zoom' as const, label: '확대/축소' },
+    ...(isMac
+      ? [
+          { type: 'separator' as const },
+          { role: 'front' as const, label: '모든 창 앞으로' },
+        ]
+      : [{ role: 'close' as const, label: '닫기' }]),
+  ];
+
+  const template: MI[] = [
+    ...(isMac
+      ? [
+          {
+            label: '스마트 간트',
+            submenu: [
+              { role: 'about' as const, label: '스마트 간트 정보' },
+              { type: 'separator' as const },
+              { role: 'services' as const, label: '서비스' },
+              { type: 'separator' as const },
+              { role: 'hide' as const, label: '스마트 간트 숨기기' },
+              { role: 'hideOthers' as const, label: '다른 앱 숨기기' },
+              { role: 'unhide' as const, label: '모두 표시' },
+              { type: 'separator' as const },
+              { role: 'quit' as const, label: '스마트 간트 종료' },
+            ],
+          } satisfies MI,
+        ]
+      : []),
+    { label: '파일', submenu: fileSubmenu },
+    {
+      label: '편집',
+      submenu: [
+        { role: 'undo' as const, label: '실행 취소' },
+        { role: 'redo' as const, label: '다시 실행' },
+        { type: 'separator' as const },
+        { role: 'cut' as const, label: '잘라내기' },
+        { role: 'copy' as const, label: '복사' },
+        { role: 'paste' as const, label: '붙여넣기' },
+        { role: 'selectAll' as const, label: '모두 선택' },
+      ],
+    },
+    { label: '보기', submenu: viewSubmenu },
+    { label: '창', submenu: windowSubmenu },
+  ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+app.whenReady().then(() => {
+  createWindow();
+  buildKoreanMenu();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

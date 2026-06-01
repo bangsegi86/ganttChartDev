@@ -31,6 +31,9 @@ function lsSet(key: string, value: string): void {
 }
 
 const fallback: AppBridge = {
+  menu: {
+    onAction: () => () => {},
+  },
   persistence: {
     async save(id, json) {
       lsSet(`project:${id}`, json);

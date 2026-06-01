@@ -13,7 +13,33 @@ export interface FileFilter {
   extensions: string[];
 }
 
+type MenuAction =
+  | 'menu:new-project'
+  | 'menu:open-projects'
+  | 'menu:save'
+  | 'menu:export-excel'
+  | 'menu:export-png'
+  | 'menu:export-pdf';
+
 const bridge = {
+  menu: {
+    onAction: (callback: (action: MenuAction) => void) => {
+      const actions: MenuAction[] = [
+        'menu:new-project',
+        'menu:open-projects',
+        'menu:save',
+        'menu:export-excel',
+        'menu:export-png',
+        'menu:export-pdf',
+      ];
+      const listeners = actions.map((ch) => {
+        const fn = () => callback(ch);
+        ipcRenderer.on(ch, fn);
+        return { ch, fn } as const;
+      });
+      return () => listeners.forEach(({ ch, fn }) => ipcRenderer.removeListener(ch, fn));
+    },
+  },
   persistence: {
     save: (id: string, json: string): Promise<PersistenceResult> =>
       ipcRenderer.invoke('persistence:save', id, json),
