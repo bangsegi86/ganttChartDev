@@ -17,12 +17,13 @@ import { BaselineManager } from '@/features/dialogs/BaselineManager';
 import { ViewGroupManager } from '@/features/dialogs/ViewGroupManager';
 import { TaskInspector } from '@/features/dialogs/TaskInspector';
 import { ConfirmDeleteDialog } from '@/features/dialogs/ConfirmDeleteDialog';
+import { ProjectManagerDialog } from '@/features/dialogs/ProjectManagerDialog';
 import { ViewFilterBanner } from '@/features/view/ViewFilterBanner';
 import { createDemoProject } from '@/data/sampleData';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
 import { Button } from '@/shared/ui/Button';
 
-type DialogKind = 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | null;
+type DialogKind = 'projects' | 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | null;
 
 /**
  * Application shell. Wires the toolbar, split-pane grid+gantt (or resource
@@ -66,6 +67,7 @@ export default function App() {
   return (
     <div className="flex h-full flex-col bg-surface text-content">
       <Toolbar
+        onOpenProjects={() => setDialog('projects')}
         onOpenHolidays={() => setDialog('holidays')}
         onOpenResources={() => setDialog('resources')}
         onOpenCalendar={() => setDialog('calendar')}
@@ -105,6 +107,7 @@ export default function App() {
 
       <StatusBar />
 
+      <ProjectManagerDialog open={dialog === 'projects'} onClose={() => setDialog(null)} />
       <HolidayManager open={dialog === 'holidays'} onClose={() => setDialog(null)} />
       <ResourceManager open={dialog === 'resources'} onClose={() => setDialog(null)} />
       <CalendarSettings open={dialog === 'calendar'} onClose={() => setDialog(null)} />

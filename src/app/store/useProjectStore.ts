@@ -70,6 +70,7 @@ interface ProjectStore {
 
   // --- lifecycle ---
   loadProject: (project: Project) => void;
+  newProject: () => void;
   saveProject: () => Promise<void>;
   flushAutosave: () => Promise<void>;
 
@@ -217,6 +218,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       filterGroupId: null,
       focusIds: [],
       dayWidthScale: 1.0,
+    },
+
+    newProject() {
+      get().loadProject(emptyProject());
     },
 
     loadProject(project) {

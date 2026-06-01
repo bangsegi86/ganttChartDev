@@ -5,9 +5,11 @@ import {
   CalendarDays,
   Copy,
   Download,
+  FilePlus2,
   FileSpreadsheet,
   FileText,
   FlagTriangleRight,
+  FolderOpen,
   Image,
   Indent,
   Layers,
@@ -41,6 +43,7 @@ const ZOOM_LABELS: Record<ZoomLevel, string> = {
 };
 
 interface ToolbarProps {
+  onOpenProjects: () => void;
   onOpenHolidays: () => void;
   onOpenResources: () => void;
   onOpenCalendar: () => void;
@@ -50,6 +53,7 @@ interface ToolbarProps {
 
 /** Top command bar. Groups document, edit, view and export actions. */
 export function Toolbar({
+  onOpenProjects,
   onOpenHolidays,
   onOpenResources,
   onOpenCalendar,
@@ -279,7 +283,7 @@ export function Toolbar({
       </Group>
 
       <div className="ml-auto flex items-center gap-1">
-        <Button size="sm" onClick={() => void exportNow('excel')} title="Excel 내보내기">
+        <Button size="sm" onClick={() => void exportNow('excel')} title="엑셀 내보내기">
           <FileSpreadsheet size={14} />
         </Button>
         <Button size="sm" onClick={() => void exportNow('png')} title="PNG 내보내기">
@@ -289,6 +293,12 @@ export function Toolbar({
           <FileText size={14} />
         </Button>
         <Divider />
+        <Button size="sm" onClick={() => useProjectStore.getState().newProject()} title="새 프로젝트">
+          <FilePlus2 size={14} />
+        </Button>
+        <Button size="sm" onClick={onOpenProjects} title="프로젝트 열기">
+          <FolderOpen size={14} /> 열기
+        </Button>
         <Button size="sm" variant={dirty ? 'accent' : 'default'} onClick={() => void saveProject()} title="저장 (Ctrl+S)">
           <Save size={14} /> {dirty ? '저장*' : '저장'}
         </Button>

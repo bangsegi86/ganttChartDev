@@ -67,7 +67,7 @@ export function ResourceView() {
                   <span className="text-2xs text-content-muted">할당된 작업 없음</span>
                 )}
               </div>
-              <div className="mt-1 text-2xs text-content-muted">주당 capacity ≈ {capacityPerWeek}h</div>
+              <div className="mt-1 text-2xs text-content-muted">주당 최대 작업량 ≈ {capacityPerWeek}시간</div>
             </div>
           );
         })}

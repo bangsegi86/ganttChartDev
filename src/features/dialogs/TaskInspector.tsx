@@ -201,17 +201,17 @@ export function TaskInspector() {
           <div className="grid grid-cols-3 gap-2 rounded border border-border bg-surface-2 p-2 text-center text-2xs text-content-muted">
             <div>
               <div className="text-sm text-content">{schedule.totalFloat}일</div>
-              여유 (Total Float)
+              전체 여유
             </div>
             <div>
               <div className="text-sm text-content">{schedule.freeFloat}일</div>
-              자유 여유 (Free Float)
+              독립 여유
             </div>
             <div>
               <div className={`text-sm ${schedule.isCritical ? 'text-critical' : 'text-content'}`}>
                 {schedule.isCritical ? '예' : '아니오'}
               </div>
-              크리티컬
+              크리티컬 경로
             </div>
           </div>
         )}
