@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { useTheme } from '@/shared/hooks/useTheme';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
@@ -40,20 +40,7 @@ export default function App() {
 
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [scrollTop, setScrollTop] = useState(0);
-  const scrollTopPendingRef = useRef(0);
-  const scrollRafRef = useRef<number | null>(null);
   const [recovery, setRecovery] = useState<null | (() => void)>(null);
-
-  // RAF-throttled scroll sync: limits React re-renders to one per animation frame
-  // instead of one per scroll event (which can be 100-200/s).
-  const handleScrollTopChange = useCallback((top: number) => {
-    scrollTopPendingRef.current = top;
-    if (scrollRafRef.current !== null) return;
-    scrollRafRef.current = requestAnimationFrame(() => {
-      setScrollTop(scrollTopPendingRef.current);
-      scrollRafRef.current = null;
-    });
-  }, []);
 
   // Bootstrap: load the demo project, and offer crash recovery if an autosave
   // from a previous (possibly crashed) session is present.
@@ -111,9 +98,9 @@ export default function App() {
           <GroupSummaryView />
         ) : (
           <>
-            <DataGrid width={gridWidth} scrollTop={scrollTop} onScrollTopChange={handleScrollTopChange} />
+            <DataGrid width={gridWidth} scrollTop={scrollTop} onScrollTopChange={setScrollTop} />
             <SplitDivider />
-            <GanttChart scrollTop={scrollTop} onScrollTopChange={handleScrollTopChange} />
+            <GanttChart scrollTop={scrollTop} onScrollTopChange={setScrollTop} />
           </>
         )}
       </div>

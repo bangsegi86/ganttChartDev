@@ -164,10 +164,11 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         ref={scrollerRef}
         className="relative flex-1 overflow-x-scroll overflow-y-auto"
         onScroll={(e) => {
+          if (isSyncingRef.current) return;
           isUserScrollingRef.current = true;
           if (clearUserScrollTimer.current) clearTimeout(clearUserScrollTimer.current);
           clearUserScrollTimer.current = setTimeout(() => { isUserScrollingRef.current = false; }, 150);
-          if (!isSyncingRef.current) onScrollTopChange(e.currentTarget.scrollTop);
+          onScrollTopChange(e.currentTarget.scrollTop);
         }}
         role="grid"
         aria-rowcount={rows.length}
