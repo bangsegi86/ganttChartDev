@@ -55,6 +55,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const indentTask = useProjectStore((s) => s.indentTask);
   const outdentTask = useProjectStore((s) => s.outdentTask);
   const importTsvTasks = useProjectStore((s) => s.importTsvTasks);
+  const updateTasksFromTsv = useProjectStore((s) => s.updateTasksFromTsv);
   /** Prevents scroll-event feedback when programmatically setting scrollTop. */
   const isSyncingRef = useRef(false);
   /** True while the user is actively scrolling this panel; guards against
@@ -63,17 +64,6 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const clearUserScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Anchor row for Shift+click range selection. Set on every plain/Ctrl click. */
   const anchorIdRef = useRef<string | null>(null);
-
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent<HTMLDivElement>) => {
-      if ((e.target as HTMLElement).tagName === 'INPUT') return;
-      const text = e.clipboardData.getData('text');
-      if (!text.trim()) return;
-      e.preventDefault();
-      importTsvTasks(text);
-    },
-    [importTsvTasks],
-  );
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
@@ -87,6 +77,43 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     const q = filter.trim().toLowerCase();
     return allRows.filter((r) => r.task.name.toLowerCase().includes(q));
   }, [allRows, filter]);
+
+  const handleCopy = useCallback(
+    (e: React.ClipboardEvent<HTMLDivElement>) => {
+      if ((e.target as HTMLElement).tagName === 'INPUT') return;
+      if (selected.size === 0) return;
+      e.preventDefault();
+      const selectedRows = rows.filter((r) => selected.has(r.task.id));
+      const PRIORITY_KO: Record<string, string> = { low: '낮음', medium: '보통', high: '높음', critical: '긴급' };
+      const header = ['작업명', '시작', '종료', '기간(일)', '진척(%)', '우선순위'].join('\t');
+      const lines = selectedRows.map((r) => {
+        const t = r.task;
+        return [t.name, t.start, t.end, t.durationDays, t.progress, PRIORITY_KO[t.priority] ?? t.priority].join('\t');
+      });
+      e.clipboardData.setData('text/plain', [header, ...lines].join('\n'));
+    },
+    [selected, rows],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLDivElement>) => {
+      if ((e.target as HTMLElement).tagName === 'INPUT') return;
+      const text = e.clipboardData.getData('text');
+      if (!text.trim()) return;
+      e.preventDefault();
+      // Rows selected → update in-place (Excel edit-and-paste-back workflow).
+      // No selection → create new tasks.
+      const selectedIds = rows
+        .filter((r) => selected.has(r.task.id))
+        .map((r) => r.task.id);
+      if (selectedIds.length > 0) {
+        updateTasksFromTsv(selectedIds, text);
+      } else {
+        importTsvTasks(text);
+      }
+    },
+    [selected, rows, updateTasksFromTsv, importTsvTasks],
+  );
 
   // Sync external scrollTop (from gantt) into our scroller, suppressing feedback.
   useEffect(() => {
@@ -124,7 +151,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   };
 
   return (
-    <div className="flex h-full flex-col border-r border-border bg-surface" style={{ width }} onPaste={handlePaste}>
+    <div className="flex h-full flex-col border-r border-border bg-surface" style={{ width }} onCopy={handleCopy} onPaste={handlePaste}>
       {/* Filter row */}
       <div className="flex items-center gap-2 border-b border-border px-2" style={{ height: 28 }}>
         <input

@@ -93,6 +93,8 @@ interface ProjectStore {
   paste: () => void;
   /** Bulk-import tasks from clipboard TSV text (e.g. copied from Excel). */
   importTsvTasks: (text: string) => void;
+  /** Update existing tasks in-place from clipboard TSV (paste onto selection). */
+  updateTasksFromTsv: (taskIds: string[], tsvText: string) => void;
 
   // --- dependencies ---
   addDependency: (fromId: TaskId, toId: TaskId, type?: DependencyType) => boolean;
@@ -167,6 +169,33 @@ function emptyProject(): Project {
     activeBaselineId: null,
     viewGroups: [],
   };
+}
+
+// ---------------------------------------------------------------------------
+// TSV copy/paste helpers (used by importTsvTasks + updateTasksFromTsv)
+// ---------------------------------------------------------------------------
+
+const TSV_PRIORITY_MAP: Record<string, 'low' | 'medium' | 'high' | 'critical'> = {
+  낮음: 'low', 보통: 'medium', 높음: 'high', 긴급: 'critical',
+  low: 'low', medium: 'medium', high: 'high', critical: 'critical',
+};
+
+/**
+ * Parse TSV clipboard text into data rows, automatically skipping a header
+ * row if one is detected. Header detection: the second cell of the first row
+ * is NOT an ISO date (e.g. "시작" header vs "2026-01-06" data).
+ */
+function parseTsvDataRows(text: string): string[][] {
+  const rows = text
+    .replace(/\r/g, '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => l.split('\t').map((c) => c.trim()));
+  if (rows.length === 0) return [];
+  const second = rows[0]?.[1] ?? '';
+  const hasHeader = second !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(second);
+  return hasHeader ? rows.slice(1) : rows;
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => {
@@ -490,25 +519,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     importTsvTasks(text) {
-      const rows = text
-        .replace(/\r/g, '')
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .map((l) => l.split('\t').map((c) => c.trim()));
-      if (rows.length === 0) return;
+      const dataRows = parseTsvDataRows(text);
+      if (dataRows.length === 0) return;
       const newIds: TaskId[] = [];
       commit((d) => {
         const baseOrder = d.tasks.length;
-        rows.forEach((cols, i) => {
-          const [rawName, rawStart, rawEnd, rawProgress] = cols;
+        dataRows.forEach((cols, i) => {
+          const [rawName, rawStart, rawEnd] = cols;
+          // 4-col legacy: name,start,end,progress
+          // 6-col new:    name,start,end,duration(skip),progress,priority
+          const rawProgress = cols.length >= 5 ? cols[4] : cols[3];
+          const rawPriority = cols.length >= 6 ? cols[5] : undefined;
           const name = (rawName || '새 작업').slice(0, 200);
-          const validISO = (s: string | undefined) => s && /^\d{4}-\d{2}-\d{2}$/.test(s);
-          const startDate = validISO(rawStart) ? rawStart! : d.startDate;
-          const endDate = validISO(rawEnd) && rawEnd! >= startDate ? rawEnd! : startDate;
+          const isValidISO = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+          const startDate = isValidISO(rawStart) ? rawStart : d.startDate;
+          const endDate = isValidISO(rawEnd) && rawEnd >= startDate ? rawEnd : startDate;
           const progress = rawProgress
             ? Math.min(100, Math.max(0, parseInt(rawProgress, 10) || 0))
             : 0;
+          const priority = rawPriority ? (TSV_PRIORITY_MAP[rawPriority.toLowerCase()] ?? 'medium') : 'medium';
           const id = nanoid(10);
           newIds.push(id);
           d.tasks.push({
@@ -519,14 +548,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
             end: endDate,
             durationDays: Math.max(1, diffDaysISO(startDate, endDate) + 1),
             progress,
-            priority: 'medium',
+            priority,
             assigneeIds: [],
             notes: '',
             isMilestone: false,
             collapsed: false,
             constraint: 'asap',
             constraintDate: null,
-            manuallyScheduled: !!(validISO(rawStart) && validISO(rawEnd)),
+            manuallyScheduled: !!(isValidISO(rawStart) && isValidISO(rawEnd)),
             order: baseOrder + i,
             color: null,
             cancelled: false,
@@ -534,6 +563,43 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         });
       });
       set({ selectedTaskIds: new Set(newIds) });
+    },
+
+    updateTasksFromTsv(taskIds, tsvText) {
+      const dataRows = parseTsvDataRows(tsvText);
+      if (dataRows.length === 0 || taskIds.length === 0) return;
+      commit((d) => {
+        taskIds.forEach((id, i) => {
+          const cols = dataRows[i];
+          if (!cols) return;
+          const task = d.tasks.find((t) => t.id === id);
+          if (!task) return;
+          const [rawName, rawStart, rawEnd] = cols;
+          const rawProgress = cols.length >= 5 ? cols[4] : cols[3];
+          const rawPriority = cols.length >= 6 ? cols[5] : undefined;
+          const isValidISO = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+          if (rawName?.trim()) task.name = rawName.trim().slice(0, 200);
+          if (isValidISO(rawStart) && isValidISO(rawEnd) && rawEnd >= rawStart) {
+            task.start = rawStart;
+            task.end = rawEnd;
+            task.durationDays = Math.max(1, diffDaysISO(rawStart, rawEnd) + 1);
+            task.manuallyScheduled = true;
+          } else if (isValidISO(rawStart)) {
+            const delta = diffDaysISO(task.start, rawStart);
+            task.start = rawStart;
+            task.end = addDaysISO(task.end, delta);
+            task.manuallyScheduled = true;
+          }
+          if (rawProgress?.trim()) {
+            const p = parseInt(rawProgress, 10);
+            if (!isNaN(p)) task.progress = Math.min(100, Math.max(0, p));
+          }
+          if (rawPriority?.trim()) {
+            const p = TSV_PRIORITY_MAP[rawPriority.trim().toLowerCase()];
+            if (p) task.priority = p;
+          }
+        });
+      });
     },
 
     // --- dependencies ---
