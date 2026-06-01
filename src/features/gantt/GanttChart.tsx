@@ -289,6 +289,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !isTextTarget(e.target)) {
+        // Stop the browser's default page-scroll-down on Space.
+        e.preventDefault();
         spaceHeldRef.current = true;
         if (!dragRef.current.mode) setDomCursor('grab');
       }
