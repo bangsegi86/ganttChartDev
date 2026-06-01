@@ -560,11 +560,24 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       if (!clip || clip.tasks.length === 0) return;
       const newIds: TaskId[] = [];
       commit((d) => {
-        for (const t of clip.tasks) {
-          const copy: Task = { ...structuredClone(t), id: nanoid(10), parentId: null };
+        // Place pasted copies at the end of the root sibling group, preserving
+        // their relative order. Copies inherit the originals' `order` from the
+        // clone; without fresh values they'd interleave with existing rows at
+        // matching order positions (scattered, non-consecutive paste).
+        const maxRootOrder = d.tasks
+          .filter((t) => t.parentId === null)
+          .reduce((m, t) => Math.max(m, t.order), -1);
+        const ordered = [...clip.tasks].sort((a, b) => a.order - b.order);
+        ordered.forEach((t, i) => {
+          const copy: Task = {
+            ...structuredClone(t),
+            id: nanoid(10),
+            parentId: null,
+            order: maxRootOrder + 1 + i,
+          };
           newIds.push(copy.id);
           d.tasks.push(copy);
-        }
+        });
         normaliseOrders(d.tasks);
       });
       set({ selectedTaskIds: new Set(newIds) });
