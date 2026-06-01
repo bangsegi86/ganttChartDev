@@ -105,9 +105,13 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLDivElement>) => {
       if ((e.target as HTMLElement).tagName === 'INPUT') return;
+      e.preventDefault();
+      // If the store already has copied tasks, the keydown handler (Ctrl+V in
+      // useKeyboardShortcuts) fires store.paste() before this paste event fires.
+      // Skip TSV import so we don't double-paste.
+      if (useProjectStore.getState().clipboard?.tasks.length) return;
       const text = e.clipboardData.getData('text');
       if (!text.trim()) return;
-      e.preventDefault();
       // Rows selected → update in-place (Excel edit-and-paste-back workflow).
       // No selection → create new tasks.
       const selectedIds = rows

@@ -50,12 +50,10 @@ export function MarkerManager({ open, onClose }: { open: boolean; onClose: () =>
         <label className="flex flex-col text-2xs text-content-muted">
           날짜
           <input
-            type="text"
+            type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            placeholder="YYYY-MM-DD"
-            inputMode="numeric"
-            className="mt-0.5 h-8 w-32 rounded border border-border bg-surface px-2 text-xs text-content"
+            className="mt-0.5 h-8 w-36 rounded border border-border bg-surface px-2 text-xs text-content"
           />
         </label>
         <label className="flex flex-1 flex-col text-2xs text-content-muted">

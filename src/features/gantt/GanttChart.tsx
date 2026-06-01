@@ -417,6 +417,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       };
       setDomCursor('grabbing');
       e.preventDefault();
+      window.addEventListener('mousemove', onWindowMove);
+      window.addEventListener('mouseup', onWindowUp);
       return;
     }
 
