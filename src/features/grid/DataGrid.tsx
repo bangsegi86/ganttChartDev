@@ -57,6 +57,10 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const importTsvTasks = useProjectStore((s) => s.importTsvTasks);
   /** Prevents scroll-event feedback when programmatically setting scrollTop. */
   const isSyncingRef = useRef(false);
+  /** True while the user is actively scrolling this panel; guards against
+   *  the sync effect snapping back to a stale scrollTop (RAF-throttle lag). */
+  const isUserScrollingRef = useRef(false);
+  const clearUserScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Anchor row for Shift+click range selection. Set on every plain/Ctrl click. */
   const anchorIdRef = useRef<string | null>(null);
 
@@ -88,6 +92,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el || Math.abs(el.scrollTop - scrollTop) <= 0.5) return;
+    // Skip if the user is actively scrolling this panel to avoid snapping back.
+    if (isUserScrollingRef.current) return;
     isSyncingRef.current = true;
     el.scrollTop = scrollTop;
     requestAnimationFrame(() => { isSyncingRef.current = false; });
@@ -157,7 +163,12 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
       <div
         ref={scrollerRef}
         className="relative flex-1 overflow-x-scroll overflow-y-auto"
-        onScroll={(e) => { if (!isSyncingRef.current) onScrollTopChange(e.currentTarget.scrollTop); }}
+        onScroll={(e) => {
+          isUserScrollingRef.current = true;
+          if (clearUserScrollTimer.current) clearTimeout(clearUserScrollTimer.current);
+          clearUserScrollTimer.current = setTimeout(() => { isUserScrollingRef.current = false; }, 150);
+          if (!isSyncingRef.current) onScrollTopChange(e.currentTarget.scrollTop);
+        }}
         role="grid"
         aria-rowcount={rows.length}
       >

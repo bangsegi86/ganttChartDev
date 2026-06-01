@@ -61,6 +61,10 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const spaceHeldRef = useRef(false);
   /** Prevents scroll-event feedback when we programmatically set scrollTop. */
   const isSyncingRef = useRef(false);
+  /** True while the user is actively scrolling this panel; blocks the sync
+   *  effect from snapping back to a stale scrollTop state (RAF-throttle lag). */
+  const isUserScrollingRef = useRef(false);
+  const clearUserScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // DOM refs for imperative tooltip + toast (avoids React state churning).
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -279,14 +283,22 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     if (isSyncingRef.current) return;
     const scroller = scrollerRef.current;
     if (!scroller) return;
+    // Mark that the user (not a sync) drove this scroll so the sync effect
+    // won't snap us back to a stale scrollTop while RAF throttle catches up.
+    isUserScrollingRef.current = true;
+    if (clearUserScrollTimer.current) clearTimeout(clearUserScrollTimer.current);
+    clearUserScrollTimer.current = setTimeout(() => { isUserScrollingRef.current = false; }, 150);
     onScrollTopChange(scroller.scrollTop);
     draw();
   }, [draw, onScrollTopChange]);
 
-  // Sync scrollTop prop → DOM (from DataGrid scroll events).
+  // Sync scrollTop prop → DOM (from DataGrid scroll events only).
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller || Math.abs(scroller.scrollTop - scrollTop) <= 0.5) return;
+    // If the user is actively scrolling this panel, the prop is stale (RAF lag).
+    // Skip to avoid snapping back, which causes the visible oscillation.
+    if (isUserScrollingRef.current) return;
     isSyncingRef.current = true;
     scroller.scrollTop = scrollTop;
     draw();
