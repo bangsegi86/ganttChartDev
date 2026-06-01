@@ -125,6 +125,7 @@ interface ProjectStore {
 
   // --- selection ---
   selectTask: (id: TaskId, additive?: boolean) => void;
+  setSelectedTaskIds: (ids: Set<TaskId>) => void;
   clearSelection: () => void;
   setEditing: (id: TaskId | null) => void;
   setInspecting: (id: TaskId | null) => void;
@@ -720,6 +721,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         else next.add(id);
         return { selectedTaskIds: next };
       });
+    },
+
+    setSelectedTaskIds(ids) {
+      set({ selectedTaskIds: ids });
     },
 
     clearSelection() {

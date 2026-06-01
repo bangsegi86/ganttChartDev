@@ -52,12 +52,15 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const selected = useProjectStore((s) => s.selectedTaskIds);
   const showCritical = useProjectStore((s) => s.view.showCriticalPath);
   const selectTask = useProjectStore((s) => s.selectTask);
+  const setSelectedTaskIds = useProjectStore((s) => s.setSelectedTaskIds);
   const toggleCollapse = useProjectStore((s) => s.toggleCollapse);
   const indentTask = useProjectStore((s) => s.indentTask);
   const outdentTask = useProjectStore((s) => s.outdentTask);
   const importTsvTasks = useProjectStore((s) => s.importTsvTasks);
   /** Prevents scroll-event feedback when programmatically setting scrollTop. */
   const isSyncingRef = useRef(false);
+  /** Anchor row for Shift+click range selection. Set on every plain/Ctrl click. */
+  const anchorIdRef = useRef<string | null>(null);
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -177,15 +180,30 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         aria-rowcount={rows.length}
       >
         <div style={{ height: rows.length * ROW_HEIGHT, minWidth: totalWidth, position: 'relative' }}>
-          {visible.map((row) => (
+          {visible.map((row, visIdx) => (
             <GridRow
               key={row.task.id}
               row={row}
               columns={columns}
-              top={(first + visible.indexOf(row)) * ROW_HEIGHT}
+              top={(first + visIdx) * ROW_HEIGHT}
               selected={selected.has(row.task.id)}
               critical={showCritical && (schedules.get(row.task.id)?.isCritical ?? false)}
-              onSelect={(additive) => selectTask(row.task.id, additive)}
+              onSelect={(isCtrl, isShift) => {
+                const id = row.task.id;
+                if (isShift && anchorIdRef.current) {
+                  const anchorIdx = rows.findIndex((r) => r.task.id === anchorIdRef.current);
+                  const currentIdx = rows.findIndex((r) => r.task.id === id);
+                  if (anchorIdx !== -1 && currentIdx !== -1) {
+                    const lo = Math.min(anchorIdx, currentIdx);
+                    const hi = Math.max(anchorIdx, currentIdx);
+                    setSelectedTaskIds(new Set(rows.slice(lo, hi + 1).map((r) => r.task.id)));
+                    return;
+                  }
+                }
+                // Plain click or Ctrl+click — update anchor.
+                anchorIdRef.current = id;
+                selectTask(id, isCtrl);
+              }}
               onToggle={() => toggleCollapse(row.task.id)}
               onIndent={() => indentTask(row.task.id)}
               onOutdent={() => outdentTask(row.task.id)}
@@ -203,7 +221,7 @@ interface GridRowProps {
   top: number;
   selected: boolean;
   critical: boolean;
-  onSelect: (additive: boolean) => void;
+  onSelect: (isCtrl: boolean, isShift: boolean) => void;
   onToggle: () => void;
   onIndent: () => void;
   onOutdent: () => void;
@@ -240,7 +258,7 @@ function GridRow({
         selected ? 'bg-accent/15' : hasChildren ? 'bg-surface-2/40' : 'hover:bg-surface-2/60',
       )}
       style={{ top, height: ROW_HEIGHT }}
-      onMouseDown={(e) => onSelect(e.ctrlKey || e.metaKey || e.shiftKey)}
+      onMouseDown={(e) => onSelect(e.ctrlKey || e.metaKey, e.shiftKey)}
       onKeyDown={handleKeyDown}
       tabIndex={0}
       role="row"
