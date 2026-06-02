@@ -17,6 +17,7 @@ import {
   MapPin,
   Moon,
   Outdent,
+  Pencil,
   Plus,
   Redo2,
   RotateCcw,
@@ -29,6 +30,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import { useState, useRef } from 'react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { Button } from '@/shared/ui/Button';
 import { ZOOM_ORDER, type ZoomLevel } from '@/features/gantt/zoom';
@@ -102,6 +104,23 @@ export function Toolbar({
   const shareExport = useProjectStore((s) => s.shareExport);
   const shareImport = useProjectStore((s) => s.shareImport);
   const setActiveView = useProjectStore((s) => s.setActiveView);
+  const renameProject = useProjectStore((s) => s.renameProject);
+  const projectName = useProjectStore((s) => s.derived.project.name);
+
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  const beginRename = () => {
+    setNameDraft(projectName);
+    setEditingName(true);
+    setTimeout(() => { nameRef.current?.select(); }, 20);
+  };
+
+  const commitRename = () => {
+    setEditingName(false);
+    if (nameDraft.trim()) renameProject(nameDraft.trim());
+  };
 
   const exportNow = async (kind: 'excel' | 'png' | 'pdf') => {
     const state = useProjectStore.getState();
@@ -131,6 +150,40 @@ export function Toolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-border bg-surface-2 px-2 py-1.5">
+      {/* Project name — click pencil to rename */}
+      <div className="mr-1 flex items-center gap-1">
+        {editingName ? (
+          <input
+            ref={nameRef}
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename();
+              else if (e.key === 'Escape') setEditingName(false);
+              e.stopPropagation();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="h-6 w-44 rounded border border-accent bg-surface px-1.5 text-xs text-content outline-none"
+          />
+        ) : (
+          <span
+            className="max-w-[180px] truncate text-xs font-semibold text-content"
+            title={projectName}
+          >
+            {projectName}
+          </span>
+        )}
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={editingName ? commitRename : beginRename}
+          className="rounded p-0.5 text-content-muted hover:text-content"
+          title="프로젝트명 변경"
+        >
+          <Pencil size={11} />
+        </button>
+      </div>
+      <div className="mx-1 h-4 w-px bg-border" />
       <Group>
         <Button size="sm" variant="accent" onClick={() => addTask(firstSelectedId())} title="작업 추가">
           <Plus size={14} /> 작업

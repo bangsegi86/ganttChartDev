@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FilePlus2, Trash2 } from 'lucide-react';
 import { Modal } from '@/shared/ui/Modal';
 import { Button } from '@/shared/ui/Button';
@@ -8,6 +8,7 @@ import { projectRepository } from '@/services/persistence/projectRepository';
 interface ProjectMeta {
   id: string;
   name: string;
+  createdAt: string;
   updatedAt: string;
   taskCount: number;
 }
@@ -29,6 +30,9 @@ export function ProjectManagerDialog({ open, onClose }: Props) {
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [newName, setNewName] = useState('새 프로젝트');
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = async () => {
     setLoading(true);
@@ -41,6 +45,7 @@ export function ProjectManagerDialog({ open, onClose }: Props) {
           return {
             id,
             name: p.name || '(이름 없음)',
+            createdAt: p.createdAt?.slice(0, 10) ?? '—',
             updatedAt: p.updatedAt?.slice(0, 10) ?? '—',
             taskCount: p.tasks.length,
           } satisfies ProjectMeta;
@@ -56,6 +61,12 @@ export function ProjectManagerDialog({ open, onClose }: Props) {
     if (open) void refresh();
   }, [open]);
 
+  useEffect(() => {
+    if (creatingNew) {
+      setTimeout(() => nameInputRef.current?.select(), 30);
+    }
+  }, [creatingNew]);
+
   const handleLoad = (id: string) => {
     void projectRepository.load(id).then((p) => {
       if (p) { loadProject(p); onClose(); }
@@ -68,22 +79,55 @@ export function ProjectManagerDialog({ open, onClose }: Props) {
     await refresh();
   };
 
-  const handleNew = () => {
-    newProject();
+  const handleConfirmNew = () => {
+    newProject(newName);
+    setCreatingNew(false);
+    setNewName('새 프로젝트');
     onClose();
   };
 
+  const handleCancelNew = () => {
+    setCreatingNew(false);
+    setNewName('새 프로젝트');
+  };
+
   return (
-    <Modal open={open} onClose={onClose} title="프로젝트 열기" width={600}>
+    <Modal open={open} onClose={onClose} title="프로젝트 열기" width={640}>
       {/* Header row */}
       <div className="mb-4 flex items-center justify-between">
         <span className="text-xs text-content-muted">
           저장된 프로젝트 {projects.length}개
         </span>
-        <Button size="sm" variant="accent" onClick={handleNew}>
-          <FilePlus2 size={14} /> 새 프로젝트
-        </Button>
+        {!creatingNew && (
+          <Button size="sm" variant="accent" onClick={() => setCreatingNew(true)}>
+            <FilePlus2 size={14} /> 새 프로젝트
+          </Button>
+        )}
       </div>
+
+      {/* New project name form */}
+      {creatingNew && (
+        <div className="mb-4 flex items-center gap-2 rounded border border-accent/40 bg-accent/5 px-3 py-2.5">
+          <span className="shrink-0 text-xs text-content-muted">프로젝트명</span>
+          <input
+            ref={nameInputRef}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleConfirmNew();
+              else if (e.key === 'Escape') handleCancelNew();
+            }}
+            className="h-7 flex-1 rounded border border-border bg-surface px-2 text-xs text-content outline-none focus:border-accent"
+            placeholder="프로젝트 이름 입력…"
+          />
+          <Button size="sm" variant="accent" onClick={handleConfirmNew}>
+            만들기
+          </Button>
+          <Button size="sm" onClick={handleCancelNew}>
+            취소
+          </Button>
+        </div>
+      )}
 
       {/* Inline delete confirmation */}
       {confirmDeleteId && (
@@ -109,6 +153,7 @@ export function ProjectManagerDialog({ open, onClose }: Props) {
             <thead className="sticky top-0 bg-surface-2 text-2xs text-content-muted">
               <tr>
                 <th className="p-2 text-left">프로젝트 이름</th>
+                <th className="p-2 text-left">생성일</th>
                 <th className="p-2 text-left">마지막 저장</th>
                 <th className="p-2 text-right">작업 수</th>
                 <th className="p-2" />
@@ -126,6 +171,7 @@ export function ProjectManagerDialog({ open, onClose }: Props) {
                       <span className="ml-2 rounded bg-accent/20 px-1.5 py-0.5 text-2xs text-accent">현재</span>
                     )}
                   </td>
+                  <td className="p-2 text-content-muted">{p.createdAt}</td>
                   <td className="p-2 text-content-muted">{p.updatedAt}</td>
                   <td className="p-2 text-right text-content-muted">{p.taskCount}개</td>
                   <td className="p-2">

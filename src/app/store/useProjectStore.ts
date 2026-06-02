@@ -72,7 +72,8 @@ interface ProjectStore {
 
   // --- lifecycle ---
   loadProject: (project: Project) => void;
-  newProject: () => void;
+  newProject: (name?: string) => void;
+  renameProject: (name: string) => void;
   saveProject: () => Promise<void>;
   flushAutosave: () => Promise<void>;
   shareExport: () => Promise<void>;
@@ -264,8 +265,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       dayWidthScale: 1.0,
     },
 
-    newProject() {
-      get().loadProject(emptyProject());
+    newProject(name) {
+      const p = emptyProject();
+      if (name?.trim()) p.name = name.trim();
+      get().loadProject(p);
+    },
+
+    renameProject(name) {
+      commit((d) => { d.name = name.trim() || d.name; });
     },
 
     loadProject(project) {
@@ -283,6 +290,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     async saveProject() {
+      commit((d) => { d.updatedAt = new Date().toISOString(); });
       await projectRepository.save(get().derived.project);
       await autosaveRepository.clear();
       set({ dirty: false });
