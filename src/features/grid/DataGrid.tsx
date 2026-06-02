@@ -148,9 +148,22 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const updateTasksFromTsvRef = useRef(updateTasksFromTsv);
   useEffect(() => { updateTasksFromTsvRef.current = updateTasksFromTsv; }, [updateTasksFromTsv]);
 
+  // Track whether the grid area was the last thing the user clicked.
+  // This is more reliable than checking document.activeElement because
+  // column headers and empty scroller space are not focusable — clicking
+  // them leaves activeElement as body, which is not inside containerRef.
+  const gridActiveRef = useRef(false);
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      gridActiveRef.current = Boolean(containerRef.current?.contains(e.target as Node));
+    };
+    window.addEventListener('mousedown', onMouseDown, true);
+    return () => window.removeEventListener('mousedown', onMouseDown, true);
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!containerRef.current?.contains(document.activeElement)) return;
+      if (!gridActiveRef.current) return;
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;
       // Skip if focus is on a text-editing element (allow native copy/paste there).
