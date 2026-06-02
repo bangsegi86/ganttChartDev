@@ -211,7 +211,10 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           const trimmed = text.trim();
           if (!trimmed) return;
           const cell = selectedCellRef.current;
-          if (cell) {
+          // Single-cell paste only when: a cell is selected AND clipboard
+          // contains a plain single value (no tabs or newlines — not Excel data).
+          const isMultiValue = trimmed.includes('\t') || trimmed.includes('\n');
+          if (cell && !isMultiValue) {
             const { taskId, colKey } = cell;
             const upd = updateTaskRef.current;
             switch (colKey) {
@@ -227,6 +230,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
             }
             return;
           }
+          // Multi-value (Excel/TSV) or no cell selected → row-level import.
           const curRows2 = rowsRef.current;
           const curSel = selectedRef.current;
           const selectedIds = curRows2.filter((r) => curSel.has(r.task.id)).map((r) => r.task.id);
