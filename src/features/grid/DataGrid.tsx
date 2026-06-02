@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Diamond, GripVertical, Lock } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
@@ -74,6 +74,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; taskId: string } | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ taskId: string; colKey: string } | null>(null);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
   const [filter, setFilter] = useState('');
@@ -132,82 +133,105 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const PRIORITY_KO: Record<string, string> = { low: '낮음', medium: '보통', high: '높음', critical: '긴급' };
   const PRIORITY_FROM_KO: Record<string, string> = { '낮음': 'low', '보통': 'medium', '높음': 'high', '긴급': 'critical' };
 
-  const getCellText = useCallback((taskId: string, colKey: string): string => {
-    const task = rows.find((r) => r.task.id === taskId)?.task;
-    if (!task) return '';
-    switch (colKey) {
-      case 'name': return task.name;
-      case 'start': return task.start;
-      case 'end': return task.end;
-      case 'progress': return String(task.progress);
-      case 'priority': return PRIORITY_KO[task.priority] ?? task.priority;
-      case 'duration': return String(task.durationDays);
-      default: return '';
-    }
-  }, [rows]);
+  // Refs so the keydown handler never goes stale without re-registering.
+  const rowsRef = useRef(rows);
+  useEffect(() => { rowsRef.current = rows; }, [rows]);
+  const selectedRef = useRef(selected);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+  const selectedCellRef = useRef(selectedCell);
+  useEffect(() => { selectedCellRef.current = selectedCell; }, [selectedCell]);
+  const updateTaskRef = useRef(updateTask);
+  useEffect(() => { updateTaskRef.current = updateTask; }, [updateTask]);
+  const importTsvTasksRef = useRef(importTsvTasks);
+  useEffect(() => { importTsvTasksRef.current = importTsvTasks; }, [importTsvTasks]);
+  const updateTasksFromTsvRef = useRef(updateTasksFromTsv);
+  useEffect(() => { updateTasksFromTsvRef.current = updateTasksFromTsv; }, [updateTasksFromTsv]);
 
-  const handleGridKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    const mod = e.ctrlKey || e.metaKey;
-    if (!mod) return;
-    const key = e.key.toLowerCase();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!containerRef.current?.contains(document.activeElement)) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      // Skip if focus is on a text-editing element (allow native copy/paste there).
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
-    if (key === 'c') {
-      e.preventDefault();
-      // Cell selected → copy single cell value
-      if (selectedCell) {
-        void navigator.clipboard.writeText(getCellText(selectedCell.taskId, selectedCell.colKey));
-        return;
-      }
-      // Rows selected → copy as TSV
-      if (selected.size === 0) return;
-      const selectedRows = rows.filter((r) => selected.has(r.task.id));
-      const header = ['작업명', '시작', '종료', '기간(일)', '진척(%)', '우선순위'].join('\t');
-      const lines = selectedRows.map((r) => {
-        const t = r.task;
-        return [t.name, t.start, t.end, t.durationDays, t.progress, PRIORITY_KO[t.priority] ?? t.priority].join('\t');
-      });
-      void navigator.clipboard.writeText([header, ...lines].join('\n'));
-      return;
-    }
+      const key = e.key.toLowerCase();
+      const curRows = rowsRef.current;
+      const curSelected = selectedRef.current;
+      const curCell = selectedCellRef.current;
 
-    if (key === 'v') {
-      e.preventDefault();
-      void navigator.clipboard.readText().then((text) => {
-        const trimmed = text.trim();
-        if (!trimmed) return;
-        // Cell selected → paste into that cell
-        if (selectedCell) {
-          const { taskId, colKey } = selectedCell;
-          switch (colKey) {
-            case 'name': updateTask(taskId, { name: trimmed.slice(0, 200) }); break;
-            case 'start': if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) updateTask(taskId, { start: trimmed }); break;
-            case 'end':   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) updateTask(taskId, { end: trimmed }); break;
-            case 'progress': { const n = Math.max(0, Math.min(100, parseInt(trimmed, 10) || 0)); updateTask(taskId, { progress: n }); break; }
-            case 'priority': {
-              const p = PRIORITY_FROM_KO[trimmed] ?? (['low','medium','high','critical'].includes(trimmed) ? trimmed : null);
-              if (p) updateTask(taskId, { priority: p as 'low'|'medium'|'high'|'critical' });
-              break;
-            }
+      if (key === 'c') {
+        e.preventDefault();
+        if (curCell) {
+          const task = curRows.find((r) => r.task.id === curCell.taskId)?.task;
+          if (!task) return;
+          let val = '';
+          switch (curCell.colKey) {
+            case 'name': val = task.name; break;
+            case 'start': val = task.start; break;
+            case 'end': val = task.end; break;
+            case 'progress': val = String(task.progress); break;
+            case 'priority': val = PRIORITY_KO[task.priority] ?? task.priority; break;
+            case 'duration': val = String(task.durationDays); break;
           }
+          void navigator.clipboard.writeText(val);
           return;
         }
-        // No cell selected → import / update rows
-        const selectedIds = rows.filter((r) => selected.has(r.task.id)).map((r) => r.task.id);
-        if (selectedIds.length > 0) {
-          updateTasksFromTsv(selectedIds, trimmed);
-        } else {
-          importTsvTasks(trimmed);
-        }
-      });
-    }
-  }, [selectedCell, selected, rows, getCellText, updateTask, importTsvTasks, updateTasksFromTsv]);
+        if (curSelected.size === 0) return;
+        const selectedRows = curRows.filter((r) => curSelected.has(r.task.id));
+        const header = ['작업명', '시작', '종료', '기간(일)', '진척(%)', '우선순위'].join('\t');
+        const lines = selectedRows.map((r) => {
+          const t = r.task;
+          return [t.name, t.start, t.end, t.durationDays, t.progress, PRIORITY_KO[t.priority] ?? t.priority].join('\t');
+        });
+        void navigator.clipboard.writeText([header, ...lines].join('\n'));
+        return;
+      }
+
+      if (key === 'v') {
+        e.preventDefault();
+        void navigator.clipboard.readText().then((text) => {
+          const trimmed = text.trim();
+          if (!trimmed) return;
+          const cell = selectedCellRef.current;
+          if (cell) {
+            const { taskId, colKey } = cell;
+            const upd = updateTaskRef.current;
+            switch (colKey) {
+              case 'name': upd(taskId, { name: trimmed.slice(0, 200) }); break;
+              case 'start': if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) upd(taskId, { start: trimmed }); break;
+              case 'end':   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) upd(taskId, { end: trimmed }); break;
+              case 'progress': { const n = Math.max(0, Math.min(100, parseInt(trimmed, 10) || 0)); upd(taskId, { progress: n }); break; }
+              case 'priority': {
+                const p = PRIORITY_FROM_KO[trimmed] ?? (['low','medium','high','critical'].includes(trimmed) ? trimmed : null);
+                if (p) upd(taskId, { priority: p as 'low'|'medium'|'high'|'critical' });
+                break;
+              }
+            }
+            return;
+          }
+          const curRows2 = rowsRef.current;
+          const curSel = selectedRef.current;
+          const selectedIds = curRows2.filter((r) => curSel.has(r.task.id)).map((r) => r.task.id);
+          if (selectedIds.length > 0) {
+            updateTasksFromTsvRef.current(selectedIds, trimmed);
+          } else {
+            importTsvTasksRef.current(trimmed);
+          }
+        });
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []); // empty deps — all values accessed via refs
 
   return (
     <div
+      ref={containerRef}
       className="flex h-full flex-col border-r border-border bg-surface outline-none"
       style={{ width }}
-      tabIndex={-1}
-      onKeyDown={handleGridKeyDown}
     >
       {/* Filter row */}
       <div className="flex items-center gap-2 border-b border-border px-2" style={{ height: 28 }}>
