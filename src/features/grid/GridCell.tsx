@@ -48,13 +48,19 @@ export function GridCell({ task, field, className }: GridCellProps) {
 
   function commit(): void {
     setEditing_(false);
-    if (field === 'name') updateTask(task.id, { name: draft.trim() || task.name });
-    else if (field === 'progress') {
+    if (field === 'name') {
+      updateTask(task.id, { name: draft.trim() || task.name });
+    } else if (field === 'progress') {
       const n = Math.max(0, Math.min(100, Number(draft) || 0));
       updateTask(task.id, { progress: n });
     } else if (field === 'start' || field === 'end') {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(draft)) {
-        updateTask(task.id, { [field]: draft });
+      const raw = draft.trim().replace(/\//g, '-');
+      // Accept both YYYY-MM-DD and YYYYMMDD
+      const normalized = /^\d{8}$/.test(raw)
+        ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`
+        : raw;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+        updateTask(task.id, { [field]: normalized });
       }
     }
     if (field === 'name') setEditing(null);

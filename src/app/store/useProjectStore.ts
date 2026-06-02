@@ -314,7 +314,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       commit((d) => {
         const t = d.tasks.find((x) => x.id === id);
         if (!t) return;
-        Object.assign(t, patch);
+        // Normalise YYYYMMDD → YYYY-MM-DD so users can skip the hyphens.
+        const norm = (v: string) =>
+          /^\d{8}$/.test(v) ? `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}` : v;
+        const normalized: Partial<Task> = { ...patch };
+        if (typeof normalized.start === 'string') normalized.start = norm(normalized.start);
+        if (typeof normalized.end   === 'string') normalized.end   = norm(normalized.end);
+        Object.assign(t, normalized);
+        // If start moved past end, snap end to the new start.
+        if (t.start > t.end) t.end = t.start;
         // Editing dates directly implies a manual pin unless cleared.
         if (patch.start || patch.end) t.manuallyScheduled = true;
       });

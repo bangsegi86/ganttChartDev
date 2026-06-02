@@ -1,5 +1,6 @@
 import { Modal } from '@/shared/ui/Modal';
 import { useProjectStore } from '@/app/store/useProjectStore';
+import { useState, useEffect } from 'react';
 import type { ConstraintType, Priority } from '@/entities';
 
 const PRIORITIES: { value: Priority; label: string }[] = [
@@ -29,7 +30,28 @@ export function TaskInspector() {
   const updateTask = useProjectStore((s) => s.updateTask);
   const setInspecting = useProjectStore((s) => s.setInspecting);
 
+  const [startDraft, setStartDraft] = useState(task?.start ?? '');
+  const [endDraft,   setEndDraft]   = useState(task?.end   ?? '');
+
+  // Keep drafts in sync when the task changes from outside (undo/redo, etc.)
+  useEffect(() => { if (task) setStartDraft(task.start); }, [task?.start]);
+  useEffect(() => { if (task) setEndDraft(task.end); },   [task?.end]);
+
   if (!inspectingTaskId || !task) return null;
+
+  const commitDate = (field: 'start' | 'end', raw: string) => {
+    const clean = raw.trim().replace(/\//g, '-');
+    const normalized = /^\d{8}$/.test(clean)
+      ? `${clean.slice(0, 4)}-${clean.slice(4, 6)}-${clean.slice(6, 8)}`
+      : clean;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      updateTask(task.id, { [field]: normalized });
+    } else {
+      // Revert draft to last valid value
+      if (field === 'start') setStartDraft(task.start);
+      else setEndDraft(task.end);
+    }
+  };
 
   const toggleAssignee = (id: string) => {
     const set = new Set(task.assigneeIds);
@@ -53,20 +75,24 @@ export function TaskInspector() {
           <Field label="시작일">
             <input
               type="text"
-              placeholder="YYYY-MM-DD"
+              placeholder="YYYY-MM-DD 또는 YYYYMMDD"
               inputMode="numeric"
-              value={task.start}
-              onChange={(e) => updateTask(task.id, { start: e.target.value })}
+              value={startDraft}
+              onChange={(e) => setStartDraft(e.target.value)}
+              onBlur={(e) => commitDate('start', e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') commitDate('start', startDraft); }}
               className="input"
             />
           </Field>
           <Field label="종료일">
             <input
               type="text"
-              placeholder="YYYY-MM-DD"
+              placeholder="YYYY-MM-DD 또는 YYYYMMDD"
               inputMode="numeric"
-              value={task.end}
-              onChange={(e) => updateTask(task.id, { end: e.target.value })}
+              value={endDraft}
+              onChange={(e) => setEndDraft(e.target.value)}
+              onBlur={(e) => commitDate('end', e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') commitDate('end', endDraft); }}
               className="input"
             />
           </Field>
