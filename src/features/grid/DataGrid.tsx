@@ -56,6 +56,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const outdentTask = useProjectStore((s) => s.outdentTask);
   const importTsvTasks = useProjectStore((s) => s.importTsvTasks);
   const updateTasksFromTsv = useProjectStore((s) => s.updateTasksFromTsv);
+  const updateTask = useProjectStore((s) => s.updateTask);
   const moveTaskBefore = useProjectStore((s) => s.moveTaskBefore);
   const addTasksToGroup = useProjectStore((s) => s.addTasksToGroup);
   const removeTasksFromGroup = useProjectStore((s) => s.removeTasksFromGroup);
@@ -71,6 +72,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const dragIdRef = useRef<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; taskId: string } | null>(null);
+  const [selectedCell, setSelectedCell] = useState<{ taskId: string; colKey: string } | null>(null);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(DEFAULT_COLUMNS);
@@ -128,6 +130,21 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   };
 
   const PRIORITY_KO: Record<string, string> = { low: '낮음', medium: '보통', high: '높음', critical: '긴급' };
+  const PRIORITY_FROM_KO: Record<string, string> = { '낮음': 'low', '보통': 'medium', '높음': 'high', '긴급': 'critical' };
+
+  const getCellText = useCallback((taskId: string, colKey: string): string => {
+    const task = rows.find((r) => r.task.id === taskId)?.task;
+    if (!task) return '';
+    switch (colKey) {
+      case 'name': return task.name;
+      case 'start': return task.start;
+      case 'end': return task.end;
+      case 'progress': return String(task.progress);
+      case 'priority': return PRIORITY_KO[task.priority] ?? task.priority;
+      case 'duration': return String(task.durationDays);
+      default: return '';
+    }
+  }, [rows]);
 
   const handleGridKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     const mod = e.ctrlKey || e.metaKey;
@@ -135,8 +152,14 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     const key = e.key.toLowerCase();
 
     if (key === 'c') {
-      if (selected.size === 0) return;
       e.preventDefault();
+      // Cell selected → copy single cell value
+      if (selectedCell) {
+        void navigator.clipboard.writeText(getCellText(selectedCell.taskId, selectedCell.colKey));
+        return;
+      }
+      // Rows selected → copy as TSV
+      if (selected.size === 0) return;
       const selectedRows = rows.filter((r) => selected.has(r.task.id));
       const header = ['작업명', '시작', '종료', '기간(일)', '진척(%)', '우선순위'].join('\t');
       const lines = selectedRows.map((r) => {
@@ -150,16 +173,34 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     if (key === 'v') {
       e.preventDefault();
       void navigator.clipboard.readText().then((text) => {
-        if (!text.trim()) return;
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        // Cell selected → paste into that cell
+        if (selectedCell) {
+          const { taskId, colKey } = selectedCell;
+          switch (colKey) {
+            case 'name': updateTask(taskId, { name: trimmed.slice(0, 200) }); break;
+            case 'start': if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) updateTask(taskId, { start: trimmed }); break;
+            case 'end':   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) updateTask(taskId, { end: trimmed }); break;
+            case 'progress': { const n = Math.max(0, Math.min(100, parseInt(trimmed, 10) || 0)); updateTask(taskId, { progress: n }); break; }
+            case 'priority': {
+              const p = PRIORITY_FROM_KO[trimmed] ?? (['low','medium','high','critical'].includes(trimmed) ? trimmed : null);
+              if (p) updateTask(taskId, { priority: p as 'low'|'medium'|'high'|'critical' });
+              break;
+            }
+          }
+          return;
+        }
+        // No cell selected → import / update rows
         const selectedIds = rows.filter((r) => selected.has(r.task.id)).map((r) => r.task.id);
         if (selectedIds.length > 0) {
-          updateTasksFromTsv(selectedIds, text);
+          updateTasksFromTsv(selectedIds, trimmed);
         } else {
-          importTsvTasks(text);
+          importTsvTasks(trimmed);
         }
       });
     }
-  }, [selected, rows, importTsvTasks, updateTasksFromTsv]);
+  }, [selectedCell, selected, rows, getCellText, updateTask, importTsvTasks, updateTasksFromTsv]);
 
   return (
     <div
@@ -226,6 +267,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
               selected={selected.has(row.task.id)}
               critical={showCritical && (schedules.get(row.task.id)?.isCritical ?? false)}
               isDragOver={dropTargetId === row.task.id}
+              selectedCellKey={selectedCell?.taskId === row.task.id ? selectedCell.colKey : null}
+              onCellSelect={(colKey) => setSelectedCell({ taskId: row.task.id, colKey })}
               onSelect={(isCtrl, isShift) => {
                 const id = row.task.id;
                 if (isShift && anchorIdRef.current) {
@@ -321,7 +364,9 @@ interface GridRowProps {
   selected: boolean;
   critical: boolean;
   isDragOver: boolean;
+  selectedCellKey: string | null;
   onSelect: (isCtrl: boolean, isShift: boolean) => void;
+  onCellSelect: (colKey: string) => void;
   onToggle: () => void;
   onIndent: () => void;
   onOutdent: () => void;
@@ -339,7 +384,9 @@ function GridRow({
   selected,
   critical,
   isDragOver,
+  selectedCellKey,
   onSelect,
+  onCellSelect,
   onToggle,
   onIndent,
   onOutdent,
@@ -388,11 +435,13 @@ function GridRow({
       {columns.map((col) => (
         <div
           key={col.key}
+          onClick={(e) => { e.stopPropagation(); onCellSelect(col.key); }}
           className={cn(
             'flex items-center overflow-hidden border-r border-border px-2',
             col.align === 'right' && 'justify-end',
             col.align === 'center' && 'justify-center',
             critical && col.key === 'name' && 'text-critical',
+            selectedCellKey === col.key && 'ring-1 ring-inset ring-accent',
           )}
           style={{ width: col.width }}
         >
