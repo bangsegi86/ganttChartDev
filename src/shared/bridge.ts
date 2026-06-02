@@ -106,6 +106,11 @@ const fallback: AppBridge = {
       });
     },
   },
+  clipboard: {
+    // Browser fallback: navigator.clipboard is available in a secure context.
+    readText: () => '',
+    writeText: () => {},
+  },
 };
 
 export function bridge(): AppBridge {

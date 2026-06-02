@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { clipboard, contextBridge, ipcRenderer } from 'electron';
 
 // The preload script is the *only* surface exposed to the renderer. It is a
 // narrow, typed bridge — no raw ipcRenderer, no Node primitives leak through.
@@ -78,6 +78,12 @@ const bridge = {
       ipcRenderer.invoke('project:export-file', defaultName, json),
     importFile: (): Promise<PersistenceResult> =>
       ipcRenderer.invoke('project:import-file'),
+  },
+  // Native clipboard — works under file:// where navigator.clipboard is
+  // unavailable (file:// is not a secure context in Chromium).
+  clipboard: {
+    readText: (): string => clipboard.readText(),
+    writeText: (text: string): void => clipboard.writeText(text),
   },
 };
 

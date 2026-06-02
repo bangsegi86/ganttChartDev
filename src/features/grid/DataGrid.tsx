@@ -8,6 +8,7 @@ import { HEADER_HEIGHT, ROW_HEIGHT, SCROLL_BOTTOM_PADDING } from '@/features/gan
 import { cn } from '@/shared/ui/cn';
 import type { Priority, Task } from '@/entities';
 import { GridCell } from './GridCell';
+import { readClipboardText, writeClipboardText } from '@/shared/clipboard';
 
 interface ColumnDef {
   key: string;
@@ -175,7 +176,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
             case 'priority': val = PRIORITY_KO[task.priority] ?? task.priority; break;
             case 'duration': val = String(task.durationDays); break;
           }
-          void navigator.clipboard.writeText(val);
+          void writeClipboardText(val);
           return;
         }
         if (curSelected.size === 0) return;
@@ -185,13 +186,13 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           const t = r.task;
           return [t.name, t.start, t.end, t.durationDays, t.progress, PRIORITY_KO[t.priority] ?? t.priority].join('\t');
         });
-        void navigator.clipboard.writeText([header, ...lines].join('\n'));
+        void writeClipboardText([header, ...lines].join('\n'));
         return;
       }
 
       if (key === 'v') {
         e.preventDefault();
-        void navigator.clipboard.readText().then((text) => {
+        void readClipboardText().then((text) => {
           const trimmed = text.trim();
           if (!trimmed) return;
           const cell = selectedCellRef.current;
