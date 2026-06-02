@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { ChevronDown, ChevronRight, Diamond, GripVertical, Lock } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
@@ -54,6 +54,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const toggleCollapse = useProjectStore((s) => s.toggleCollapse);
   const indentTask = useProjectStore((s) => s.indentTask);
   const outdentTask = useProjectStore((s) => s.outdentTask);
+  const importTsvTasks = useProjectStore((s) => s.importTsvTasks);
+  const updateTasksFromTsv = useProjectStore((s) => s.updateTasksFromTsv);
   const moveTaskBefore = useProjectStore((s) => s.moveTaskBefore);
   const addTasksToGroup = useProjectStore((s) => s.addTasksToGroup);
   const removeTasksFromGroup = useProjectStore((s) => s.removeTasksFromGroup);
@@ -125,8 +127,47 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     window.addEventListener('mouseup', up);
   };
 
+  const PRIORITY_KO: Record<string, string> = { low: '낮음', medium: '보통', high: '높음', critical: '긴급' };
+
+  const handleGridKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const key = e.key.toLowerCase();
+
+    if (key === 'c') {
+      if (selected.size === 0) return;
+      e.preventDefault();
+      const selectedRows = rows.filter((r) => selected.has(r.task.id));
+      const header = ['작업명', '시작', '종료', '기간(일)', '진척(%)', '우선순위'].join('\t');
+      const lines = selectedRows.map((r) => {
+        const t = r.task;
+        return [t.name, t.start, t.end, t.durationDays, t.progress, PRIORITY_KO[t.priority] ?? t.priority].join('\t');
+      });
+      void navigator.clipboard.writeText([header, ...lines].join('\n'));
+      return;
+    }
+
+    if (key === 'v') {
+      e.preventDefault();
+      void navigator.clipboard.readText().then((text) => {
+        if (!text.trim()) return;
+        const selectedIds = rows.filter((r) => selected.has(r.task.id)).map((r) => r.task.id);
+        if (selectedIds.length > 0) {
+          updateTasksFromTsv(selectedIds, text);
+        } else {
+          importTsvTasks(text);
+        }
+      });
+    }
+  }, [selected, rows, importTsvTasks, updateTasksFromTsv]);
+
   return (
-    <div className="flex h-full flex-col border-r border-border bg-surface" style={{ width }}>
+    <div
+      className="flex h-full flex-col border-r border-border bg-surface outline-none"
+      style={{ width }}
+      tabIndex={-1}
+      onKeyDown={handleGridKeyDown}
+    >
       {/* Filter row */}
       <div className="flex items-center gap-2 border-b border-border px-2" style={{ height: 28 }}>
         <input
