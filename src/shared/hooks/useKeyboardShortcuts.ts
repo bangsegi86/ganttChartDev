@@ -6,7 +6,8 @@ import { useProjectStore } from '@/app/store/useProjectStore';
  * typing in the grid/dialogs is never hijacked.
  *
  *   Ctrl/Cmd+Z / Ctrl+Y  Undo / Redo
- *   Ctrl/Cmd+C / V       Copy / Paste tasks
+ *   Ctrl/Cmd+C / V       Copy / Paste — handled by DataGrid onCopy/onPaste
+ *                         events (native clipboard, supports Excel paste)
  *   Ctrl/Cmd+D           Duplicate
  *   Ctrl/Cmd+S           Save
  *   Delete / Backspace   Delete selected
@@ -50,14 +51,11 @@ export function useKeyboardShortcuts(): void {
 
       if (isText) return; // remaining shortcuts must not fire while editing text
 
-      if (mod && e.key.toLowerCase() === 'c') {
-        store.copySelected();
-        return;
-      }
-      if (mod && e.key.toLowerCase() === 'v') {
-        store.paste();
-        return;
-      }
+      // Ctrl+C / Ctrl+V: let the browser fire the native copy/paste events which
+      // are handled by DataGrid's onCopy / onPaste (supports both app-to-app TSV
+      // and external sources like Excel). Do NOT intercept here to avoid double
+      // paste and to ensure the system clipboard is always the source of truth.
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (store.selectedTaskIds.size > 0) {
           e.preventDefault();
