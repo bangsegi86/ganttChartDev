@@ -177,7 +177,9 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
 
       if (key === 'c') {
         e.preventDefault();
-        if (curCell) {
+        // Single-cell copy only when exactly one row is selected.
+        // With multiple rows selected (Shift+click), always copy as TSV.
+        if (curCell && curSelected.size <= 1) {
           const task = curRows.find((r) => r.task.id === curCell.taskId)?.task;
           if (!task) return;
           let val = '';
