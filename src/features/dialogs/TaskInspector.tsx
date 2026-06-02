@@ -183,14 +183,21 @@ export function TaskInspector() {
             />
             마일스톤
           </label>
-          <label className="flex items-center gap-2 text-xs">
+          <label className="flex items-center gap-2 text-xs" title="체크 시 의존성 무시하고 날짜 고정 / 해제 시 의존성에 따라 자동 이동">
             <input
               type="checkbox"
               checked={task.manuallyScheduled}
-              onChange={(e) => updateTask(task.id, { manuallyScheduled: e.target.checked })}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  updateTask(task.id, { manuallyScheduled: true });
+                } else {
+                  // Clear the pin and reset constraint so the scheduler takes over.
+                  updateTask(task.id, { manuallyScheduled: false, constraint: 'asap', constraintDate: null });
+                }
+              }}
               className="h-4 w-4 accent-[rgb(var(--color-accent))]"
             />
-            수동 일정
+            수동 고정 <span className="text-content-muted">(의존성 무시)</span>
           </label>
         </div>
 

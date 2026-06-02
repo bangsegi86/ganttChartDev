@@ -462,7 +462,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         if (!t) return;
         t.start = addDaysISO(t.start, deltaDays);
         t.end = addDaysISO(t.end, deltaDays);
-        t.manuallyScheduled = true;
+        // Use SNET instead of a full manual pin: "start no earlier than here
+        // but still follow predecessors if they push past this date."
+        // This lets successor tasks continue to propagate when their
+        // predecessor moves forward, while keeping the task anchored when
+        // predecessors are moved backward.
+        t.constraint = 'snet';
+        t.constraintDate = t.start;
+        t.manuallyScheduled = false;
       });
     },
 

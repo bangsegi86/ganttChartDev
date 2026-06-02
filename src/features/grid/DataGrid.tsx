@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Diamond, GripVertical } from 'lucide-react';
+import { ChevronDown, ChevronRight, Diamond, GripVertical, Lock } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -417,6 +417,11 @@ function GridRow({
                 </span>
               )}
               <GridCell task={task} field="name" className={cn(hasChildren && 'font-semibold', task.cancelled && 'line-through text-content-muted')} />
+              {task.manuallyScheduled && (
+                <span title="수동 고정 — 의존성 무시됨. 작업 상세에서 해제 가능">
+                  <Lock size={9} className="ml-1 shrink-0 text-content-muted/50" />
+                </span>
+              )}
               {taskGroups.length > 0 && (
                 <div className="ml-1 flex shrink-0 gap-0.5" title={taskGroups.map((g) => g.name).join(', ')}>
                   {taskGroups.slice(0, 4).map((g) => (
