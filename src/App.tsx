@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { useTheme } from '@/shared/hooks/useTheme';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
+import { useCopyPaste } from '@/shared/hooks/useCopyPaste';
 import { Toolbar } from '@/features/toolbar/Toolbar';
 import { StatusBar } from '@/features/statusbar/StatusBar';
 import { DataGrid } from '@/features/grid/DataGrid';
@@ -37,6 +38,7 @@ type DialogKind = 'projects' | 'holidays' | 'resources' | 'calendar' | 'baseline
 export default function App() {
   useTheme();
   useKeyboardShortcuts();
+  useCopyPaste();
 
   const gridWidth = useProjectStore((s) => s.view.gridWidth);
   const activeView = useProjectStore((s) => s.view.activeView);
