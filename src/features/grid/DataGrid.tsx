@@ -408,8 +408,24 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           if (!nextRow || !nextCol) return;
           const newCell: CellPos = { taskId: nextRow.task.id, colKey: nextCol.key };
           setSelectedCell(newCell);
-          if (!e.shiftKey) setRangeAnchor(newCell); // plain nav resets anchor
-          // Shift+Arrow: keep existing anchor → range extends
+
+          const store = useProjectStore.getState();
+          if (!e.shiftKey) {
+            // Plain nav: move cell + sync row highlight
+            setRangeAnchor(newCell);
+            anchorIdRef.current = nextRow.task.id;
+            store.selectTask(nextRow.task.id, false);
+          } else {
+            // Shift+Arrow: extend cell range (keep anchor) + extend row selection
+            if (anchorIdRef.current) {
+              const anchorRowIdx = curRows.findIndex((x) => x.task.id === anchorIdRef.current);
+              if (anchorRowIdx !== -1) {
+                const lo = Math.min(anchorRowIdx, r);
+                const hi = Math.max(anchorRowIdx, r);
+                store.setSelectedTaskIds(new Set(curRows.slice(lo, hi + 1).map((x) => x.task.id)));
+              }
+            }
+          }
         }
         return;
       }
