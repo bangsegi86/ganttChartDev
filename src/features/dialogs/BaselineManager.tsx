@@ -45,7 +45,7 @@ export function BaselineManager({ open, onClose }: { open: boolean; onClose: () 
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="예: 초기 계획"
-            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content"
+            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
           />
         </label>
         <Button
@@ -86,7 +86,7 @@ export function BaselineManager({ open, onClose }: { open: boolean; onClose: () 
           </thead>
           <tbody>
             {project.baselines.map((b) => (
-              <tr key={b.id} className="border-t border-border">
+              <tr key={b.id} className="border-t border-border transition-colors hover:bg-surface-2/60">
                 <td className="p-2 text-content">{b.name}</td>
                 <td className="p-2 text-content-muted">{new Date(b.capturedAt).toLocaleString('ko-KR')}</td>
                 <td className="p-2 text-center">

@@ -46,7 +46,7 @@ export function ViewGroupManager({ open, onClose }: { open: boolean; onClose: ()
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && create()}
             placeholder="예: 1차 릴리스"
-            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content"
+            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
           />
         </label>
         <Button size="sm" variant="accent" onClick={create}>

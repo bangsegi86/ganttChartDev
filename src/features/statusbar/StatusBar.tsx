@@ -15,7 +15,11 @@ export function StatusBar() {
   const fmt = (iso?: string) => (iso ? iso.slice(0, 10) : '—');
 
   return (
-    <div className="flex items-center gap-4 border-t border-border bg-surface-2 px-3 py-1 text-2xs text-content-muted">
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex items-center gap-4 border-t border-border bg-surface-2 px-3 py-1 text-2xs text-content-muted"
+    >
       <span>작업 {taskCount.toLocaleString()}개</span>
       <span>의존성 {project.dependencies.length.toLocaleString()}개</span>
       <span>크리티컬 {criticalCount}개</span>
@@ -31,7 +35,7 @@ export function StatusBar() {
             <AlertTriangle size={12} /> 순환 의존성 {cyclic}개
           </span>
         ) : (
-          <span className="flex items-center gap-1 text-emerald-500">
+          <span className="flex items-center gap-1 text-success">
             <CircleCheck size={12} /> 정상
           </span>
         )}

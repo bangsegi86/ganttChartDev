@@ -16,6 +16,7 @@ export default {
         accent: 'rgb(var(--color-accent) / <alpha-value>)',
         'accent-fg': 'rgb(var(--color-accent-fg) / <alpha-value>)',
         critical: 'rgb(var(--color-critical) / <alpha-value>)',
+        success: 'rgb(var(--color-success) / <alpha-value>)',
       },
       fontSize: {
         '2xs': '0.6875rem',

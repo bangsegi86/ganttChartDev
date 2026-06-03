@@ -164,7 +164,7 @@ export function Toolbar({
               e.stopPropagation();
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="h-6 w-44 rounded border border-accent bg-surface px-1.5 text-xs text-content outline-none"
+            className="h-6 min-w-[120px] max-w-[200px] flex-1 rounded border border-accent bg-surface px-1.5 text-xs text-content outline-none transition-colors focus:ring-1 focus:ring-accent/50"
           />
         ) : (
           <span
@@ -177,10 +177,10 @@ export function Toolbar({
         <button
           onMouseDown={(e) => e.stopPropagation()}
           onClick={editingName ? commitRename : beginRename}
-          className="rounded p-0.5 text-content-muted hover:text-content"
+          className="rounded p-0.5 text-content-muted transition-colors hover:text-content"
           title="프로젝트명 변경"
         >
-          <Pencil size={11} />
+          <Pencil size={13} />
         </button>
       </div>
       <div className="mx-1 h-4 w-px bg-border" />
@@ -256,7 +256,7 @@ export function Toolbar({
         <select
           value={view.zoom}
           onChange={(e) => setZoom(e.target.value as ZoomLevel)}
-          className="h-7 rounded-md border border-border bg-surface px-1 text-xs text-content"
+          className="h-7 rounded-md border border-border bg-surface px-1 text-xs text-content outline-none transition-colors hover:border-content-muted/60 focus:border-accent"
           aria-label="확대 단계"
         >
           {ZOOM_ORDER.slice()
@@ -314,7 +314,7 @@ export function Toolbar({
             else if (v === 'focus') setViewFilter('focus');
             else if (v.startsWith('group:')) setViewFilter('group', v.slice(6));
           }}
-          className="h-7 max-w-[150px] rounded-md border border-border bg-surface px-1 text-xs text-content"
+          className="h-7 max-w-[150px] rounded-md border border-border bg-surface px-1 text-xs text-content outline-none transition-colors hover:border-content-muted/60 focus:border-accent"
           aria-label="보기 필터"
           title="표시할 작업 필터"
         >
@@ -381,9 +381,6 @@ export function Toolbar({
         <Button size="icon" variant="ghost" onClick={toggleTheme} title="테마 전환">
           {view.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </Button>
-        <span className="hidden items-center gap-1 text-2xs text-content-muted md:flex">
-          <Download size={12} />
-        </span>
       </div>
     </div>
   );

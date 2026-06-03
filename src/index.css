@@ -5,7 +5,7 @@
 @layer components {
   /* Shared form-control styling used by dialogs. */
   .input {
-    @apply h-8 w-full rounded border border-border bg-surface px-2 text-xs text-content outline-none focus:border-accent;
+    @apply h-8 w-full rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors hover:border-content-muted/50 focus:border-accent;
   }
 }
 
@@ -22,6 +22,8 @@
   --color-accent: 79 70 229;
   --color-accent-fg: 255 255 255;
   --color-critical: 220 38 38;
+  --color-success: 16 185 129;
+  color-scheme: light;
 }
 
 .dark {
@@ -34,6 +36,8 @@
   --color-accent: 129 140 248;
   --color-accent-fg: 15 23 42;
   --color-critical: 248 113 113;
+  --color-success: 52 211 153;
+  color-scheme: dark;
 }
 
 html,
@@ -50,21 +54,36 @@ body {
   overflow: hidden;
 }
 
-/* Thin, theme-aware scrollbars. */
+/* Thin, theme-aware scrollbars (webkit). */
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 *::-webkit-scrollbar-thumb {
   background: rgb(var(--color-surface-3));
-  border-radius: 6px;
+  border-radius: 4px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Firefox scrollbar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--color-surface-3)) transparent;
 }
 
 /* High-contrast focus ring for keyboard navigation / accessibility. */
 :focus-visible {
   outline: 2px solid rgb(var(--color-accent));
   outline-offset: 1px;
+}
+
+/* Modal / dialog entrance animation. */
+@keyframes dialog-in {
+  from { opacity: 0; transform: scale(0.97) translateY(-6px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+.animate-dialog-in {
+  animation: dialog-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
 }

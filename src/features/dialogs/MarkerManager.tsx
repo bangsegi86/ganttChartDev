@@ -53,7 +53,7 @@ export function MarkerManager({ open, onClose }: { open: boolean; onClose: () =>
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="mt-0.5 h-8 w-36 rounded border border-border bg-surface px-2 text-xs text-content"
+            className="mt-0.5 h-8 w-36 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
           />
         </label>
         <label className="flex flex-1 flex-col text-2xs text-content-muted">
@@ -63,7 +63,7 @@ export function MarkerManager({ open, onClose }: { open: boolean; onClose: () =>
             onChange={(e) => setLabel(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
             placeholder="예: 오픈일"
-            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content"
+            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
           />
         </label>
         <label className="flex flex-col text-2xs text-content-muted">
@@ -93,14 +93,15 @@ export function MarkerManager({ open, onClose }: { open: boolean; onClose: () =>
         {PRESET_COLORS.map((c) => (
           <button
             key={c}
-            className="h-5 w-5 rounded-full border-2 transition-transform hover:scale-110"
+            className="h-5 w-5 rounded-full transition-transform hover:scale-110"
             style={{
               background: c,
-              borderColor: color === c ? 'white' : 'transparent',
-              outline: color === c ? `2px solid ${c}` : 'none',
+              outline: color === c ? '2px solid rgb(var(--color-accent))' : '2px solid transparent',
+              outlineOffset: '2px',
             }}
             onClick={() => setColor(c)}
-            title={c}
+            aria-label={`색상 ${c}`}
+            aria-pressed={color === c}
           />
         ))}
       </div>
@@ -120,7 +121,7 @@ export function MarkerManager({ open, onClose }: { open: boolean; onClose: () =>
             {markers.map((m) => (
               <tr
                 key={m.id}
-                className={`border-t border-border ${editingId === m.id ? 'bg-accent/10' : ''}`}
+                className={`border-t border-border transition-colors ${editingId === m.id ? 'bg-accent/10' : 'hover:bg-surface-2/60'}`}
               >
                 <td className="p-2">
                   <span

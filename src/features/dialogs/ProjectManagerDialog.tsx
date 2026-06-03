@@ -163,12 +163,12 @@ export function ProjectManagerDialog({ open, onClose }: Props) {
               {projects.map((p) => (
                 <tr
                   key={p.id}
-                  className={`border-t border-border ${p.id === currentId ? 'bg-accent/10' : 'hover:bg-surface-2'}`}
+                  className={`border-t transition-colors ${p.id === currentId ? 'border-l-2 border-l-accent bg-accent/10' : 'border-border hover:bg-surface-2'}`}
                 >
                   <td className="p-2">
                     <span className="font-medium text-content">{p.name}</span>
                     {p.id === currentId && (
-                      <span className="ml-2 rounded bg-accent/20 px-1.5 py-0.5 text-2xs text-accent">현재</span>
+                      <span className="ml-2 rounded bg-accent px-1.5 py-0.5 text-2xs font-medium text-accent-fg">현재</span>
                     )}
                   </td>
                   <td className="p-2 text-content-muted">{p.createdAt}</td>

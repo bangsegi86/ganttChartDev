@@ -40,7 +40,7 @@ export function HolidayManager({ open, onClose }: { open: boolean; onClose: () =
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content"
+            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
           />
         </label>
         <label className="flex flex-1 flex-col text-2xs text-content-muted">
@@ -49,7 +49,7 @@ export function HolidayManager({ open, onClose }: { open: boolean; onClose: () =
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="예: 창립기념일"
-            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content"
+            className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
           />
         </label>
         <Button size="sm" variant="accent" onClick={add}>
@@ -64,7 +64,7 @@ export function HolidayManager({ open, onClose }: { open: boolean; onClose: () =
             type="number"
             value={fromYear}
             onChange={(e) => setFromYear(Number(e.target.value))}
-            className="mt-0.5 h-8 w-24 rounded border border-border bg-surface px-2 text-xs text-content"
+            className="mt-0.5 h-8 w-24 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
           />
         </label>
         <label className="flex flex-col text-2xs text-content-muted">
@@ -73,7 +73,7 @@ export function HolidayManager({ open, onClose }: { open: boolean; onClose: () =
             type="number"
             value={toYear}
             onChange={(e) => setToYear(Number(e.target.value))}
-            className="mt-0.5 h-8 w-24 rounded border border-border bg-surface px-2 text-xs text-content"
+            className="mt-0.5 h-8 w-24 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
           />
         </label>
         <Button size="sm" onClick={regenerate}>
@@ -93,7 +93,7 @@ export function HolidayManager({ open, onClose }: { open: boolean; onClose: () =
           </thead>
           <tbody>
             {holidays.map((h) => (
-              <tr key={h.date} className="border-t border-border">
+              <tr key={h.date} className="border-t border-border transition-colors hover:bg-surface-2/60">
                 <td className="p-2 text-content">{h.date}</td>
                 <td className="p-2 text-content">{h.name}</td>
                 <td className="p-2 text-center text-content-muted">

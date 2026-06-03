@@ -36,7 +36,7 @@ export function ResourceManager({ open, onClose }: { open: boolean; onClose: () 
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
-              className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content"
+              className="mt-0.5 h-8 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
             />
           </label>
           <label className="flex flex-col text-2xs text-content-muted">
@@ -44,7 +44,7 @@ export function ResourceManager({ open, onClose }: { open: boolean; onClose: () 
             <input
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              className="mt-0.5 h-8 w-28 rounded border border-border bg-surface px-2 text-xs text-content"
+              className="mt-0.5 h-8 w-28 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
             />
           </label>
           <label className="flex flex-col text-2xs text-content-muted">
@@ -53,7 +53,7 @@ export function ResourceManager({ open, onClose }: { open: boolean; onClose: () 
               type="number"
               value={capacity}
               onChange={(e) => setCapacity(Number(e.target.value))}
-              className="mt-0.5 h-8 w-16 rounded border border-border bg-surface px-2 text-xs text-content"
+              className="mt-0.5 h-8 w-16 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
             />
           </label>
         </div>
@@ -66,9 +66,14 @@ export function ResourceManager({ open, onClose }: { open: boolean; onClose: () 
                 <button
                   key={c}
                   onClick={() => setColor(c)}
-                  className="h-6 w-6 rounded-full border-2"
-                  style={{ background: c, borderColor: color === c ? '#fff' : 'transparent' }}
+                  className="h-6 w-6 rounded-full transition-transform hover:scale-110"
+                  style={{
+                    background: c,
+                    outline: color === c ? '2px solid rgb(var(--color-accent))' : '2px solid transparent',
+                    outlineOffset: '2px',
+                  }}
                   aria-label={`색상 ${c}`}
+                  aria-pressed={color === c}
                 />
               ))}
             </div>
@@ -91,7 +96,7 @@ export function ResourceManager({ open, onClose }: { open: boolean; onClose: () 
           </thead>
           <tbody>
             {resources.map((r) => (
-              <tr key={r.id} className="border-t border-border">
+              <tr key={r.id} className="border-t border-border transition-colors hover:bg-surface-2/60">
                 <td className="p-2">
                   <span className="inline-flex items-center gap-2 text-content">
                     <span className="h-3 w-3 rounded-full" style={{ background: r.color }} />

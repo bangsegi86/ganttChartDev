@@ -35,7 +35,7 @@ export function Modal({ open, title, onClose, children, footer, width = 560 }: M
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="max-h-[85vh] overflow-hidden rounded-lg border border-border bg-surface shadow-2xl flex flex-col"
+        className="animate-dialog-in max-h-[85vh] overflow-hidden rounded-lg border border-border bg-surface shadow-2xl flex flex-col"
         style={{ width }}
         onMouseDown={(e) => e.stopPropagation()}
       >

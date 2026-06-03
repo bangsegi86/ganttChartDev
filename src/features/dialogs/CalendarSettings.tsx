@@ -25,10 +25,10 @@ export function CalendarSettings({ open, onClose }: { open: boolean; onClose: ()
               <button
                 key={i}
                 onClick={() => toggleDay(i)}
-                className={`h-9 w-9 rounded-md border text-xs ${
+                className={`h-9 w-9 rounded-md border text-xs transition-all active:scale-95 ${
                   calendar.workingWeekdays.includes(i)
                     ? 'border-accent bg-accent text-accent-fg'
-                    : 'border-border bg-surface-2 text-content-muted'
+                    : 'border-border bg-surface-2 text-content-muted hover:border-accent/50 hover:text-content'
                 }`}
               >
                 {label}
@@ -71,7 +71,7 @@ export function CalendarSettings({ open, onClose }: { open: boolean; onClose: ()
             max={24}
             value={calendar.hoursPerDay}
             onChange={(e) => setCalendar({ hoursPerDay: Number(e.target.value) || 8 })}
-            className="h-8 w-20 rounded border border-border bg-surface px-2 text-xs text-content"
+            className="h-8 w-20 rounded border border-border bg-surface px-2 text-xs text-content outline-none transition-colors focus:border-accent"
           />
         </label>
       </div>
@@ -83,8 +83,8 @@ function ModeButton({ active, label, onClick }: { active: boolean; label: string
   return (
     <button
       onClick={onClick}
-      className={`flex-1 rounded-md border px-3 py-2 text-xs ${
-        active ? 'border-accent bg-accent text-accent-fg' : 'border-border bg-surface-2 text-content-muted'
+      className={`flex-1 rounded-md border px-3 py-2 text-xs transition-all active:scale-[0.97] ${
+        active ? 'border-accent bg-accent text-accent-fg' : 'border-border bg-surface-2 text-content-muted hover:border-accent/50 hover:text-content'
       }`}
     >
       {label}

@@ -12,10 +12,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants: Record<Variant, string> = {
   default:
-    'bg-surface-2 text-content border border-border hover:bg-surface-3',
-  ghost: 'text-content hover:bg-surface-3',
-  accent: 'bg-accent text-accent-fg hover:opacity-90',
-  danger: 'bg-critical text-white hover:opacity-90',
+    'bg-surface-2 text-content border border-border enabled:hover:bg-surface-3',
+  ghost: 'text-content enabled:hover:bg-surface-3',
+  accent: 'bg-accent text-accent-fg enabled:hover:opacity-90',
+  danger: 'bg-critical text-white enabled:hover:opacity-90',
 };
 
 const sizes: Record<Size, string> = {
@@ -29,11 +29,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = 'default', size = 'md', active, className, ...props }, ref) => (
     <button
       ref={ref}
+      aria-pressed={active !== undefined ? active : undefined}
       className={cn(
-        'inline-flex items-center rounded-md font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none select-none',
+        'inline-flex items-center rounded-md font-medium transition-all select-none',
+        'active:scale-[0.97]',
+        'disabled:cursor-not-allowed disabled:opacity-40',
         variants[variant],
         sizes[size],
-        active && 'ring-2 ring-accent',
+        active && 'bg-accent/15 !text-accent border-accent/40',
         className,
       )}
       {...props}
