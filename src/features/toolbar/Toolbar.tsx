@@ -28,8 +28,8 @@ import {
   Trash2,
   Undo2,
   Users,
-  ZoomIn,
-  ZoomOut,
+  ChevronLeft as ZoomOut,
+  ChevronRight as ZoomIn,
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
