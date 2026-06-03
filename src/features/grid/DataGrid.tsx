@@ -147,6 +147,28 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   useEffect(() => { importTsvTasksRef.current = importTsvTasks; }, [importTsvTasks]);
   const updateTasksFromTsvRef = useRef(updateTasksFromTsv);
   useEffect(() => { updateTasksFromTsvRef.current = updateTasksFromTsv; }, [updateTasksFromTsv]);
+  const columnsRef = useRef(columns);
+  useEffect(() => { columnsRef.current = columns; }, [columns]);
+
+  // Keep the active cell scrolled into view as it moves with the arrow keys.
+  useEffect(() => {
+    if (!selectedCell) return;
+    const idx = rows.findIndex((r) => r.task.id === selectedCell.taskId);
+    if (idx < 0) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const top = idx * ROW_HEIGHT;
+    const bottom = top + ROW_HEIGHT;
+    if (top < el.scrollTop) {
+      el.scrollTop = top;
+      onScrollTopChange(top);
+    } else if (bottom > el.scrollTop + el.clientHeight) {
+      const next = bottom - el.clientHeight;
+      el.scrollTop = next;
+      onScrollTopChange(next);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCell]);
 
   // Track whether the grid area was the last thing the user clicked.
   // This is more reliable than checking document.activeElement because
@@ -164,11 +186,41 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!gridActiveRef.current) return;
+      const target = e.target as HTMLElement;
+      const isTextInput =
+        target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
       const mod = e.ctrlKey || e.metaKey;
+
+      // --- Excel-style cell navigation (no modifier, not while editing) ---
+      if (!mod && !isTextInput) {
+        const cell = selectedCellRef.current;
+        const navKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'];
+        if (cell && navKeys.includes(e.key)) {
+          const curRows = rowsRef.current;
+          const cols = columnsRef.current;
+          let r = curRows.findIndex((x) => x.task.id === cell.taskId);
+          let c = cols.findIndex((x) => x.key === cell.colKey);
+          if (r === -1 || c === -1) return;
+          switch (e.key) {
+            case 'ArrowUp': r = Math.max(0, r - 1); break;
+            case 'ArrowDown':
+            case 'Enter': r = Math.min(curRows.length - 1, r + 1); break;
+            case 'ArrowLeft': c = Math.max(0, c - 1); break;
+            case 'ArrowRight': c = Math.min(cols.length - 1, c + 1); break;
+          }
+          e.preventDefault();
+          const nextRow = curRows[r];
+          const nextCol = cols[c];
+          if (nextRow && nextCol) {
+            setSelectedCell({ taskId: nextRow.task.id, colKey: nextCol.key });
+          }
+        }
+        return;
+      }
+
       if (!mod) return;
       // Skip if focus is on a text-editing element (allow native copy/paste there).
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (isTextInput) return;
 
       const key = e.key.toLowerCase();
       const curRows = rowsRef.current;
