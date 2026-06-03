@@ -16,8 +16,15 @@ export interface VisibleRow {
  * sibling `order` and collapse state. Collapsed parents hide their entire
  * subtree. Computed once per render and shared by the grid and gantt so both
  * panes stay perfectly row-aligned.
+ *
+ * Pass `{ includeCollapsed: true }` to flatten the *entire* tree regardless of
+ * collapse state — used by exports, where every task must appear.
  */
-export function buildVisibleRows(tasks: Task[]): VisibleRow[] {
+export function buildVisibleRows(
+  tasks: Task[],
+  options?: { includeCollapsed?: boolean },
+): VisibleRow[] {
+  const includeCollapsed = options?.includeCollapsed ?? false;
   const childrenOf = new Map<TaskId | null, Task[]>();
   for (const t of tasks) {
     const key = t.parentId;
@@ -34,7 +41,7 @@ export function buildVisibleRows(tasks: Task[]): VisibleRow[] {
       const wbs = prefix ? `${prefix}.${i + 1}` : `${i + 1}`;
       const hasChildren = (childrenOf.get(task.id)?.length ?? 0) > 0;
       rows.push({ task, depth, hasChildren, wbs, index: rows.length });
-      if (hasChildren && !task.collapsed) walk(task.id, depth + 1, wbs);
+      if (hasChildren && (includeCollapsed || !task.collapsed)) walk(task.id, depth + 1, wbs);
     });
   };
 

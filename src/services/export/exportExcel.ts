@@ -61,7 +61,9 @@ export async function exportExcel(
     { width: 12 },
   ];
 
-  const rows = buildVisibleRows(project.tasks);
+  // Exports must contain the full plan — every task, even those hidden under a
+  // collapsed parent in the live grid.
+  const rows = buildVisibleRows(project.tasks, { includeCollapsed: true });
   rows.forEach((r) => {
     const t = r.task;
     const assignees = t.assigneeIds

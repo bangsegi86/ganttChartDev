@@ -26,7 +26,8 @@ export interface FullRenderInput {
  */
 export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
   const { project, schedules, theme, showCritical, showBaseline } = input;
-  const rows = buildVisibleRows(project.tasks);
+  // Exports show the full plan — expand every collapsed parent.
+  const rows = buildVisibleRows(project.tasks, { includeCollapsed: true });
   const rowIndex = rowIndexMap(rows);
 
   let dayWidth = ZOOM_CONFIGS[input.zoom].dayWidth;

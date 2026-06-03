@@ -102,6 +102,12 @@ interface ProjectStore {
   paste: () => void;
   /** Bulk-import tasks from clipboard TSV text (e.g. copied from Excel). */
   importTsvTasks: (text: string) => void;
+  /**
+   * Insert new tasks parsed from TSV as siblings immediately after `afterId`
+   * (shifting later siblings down). When `afterId` is null they are appended at
+   * the end of the root level. Returns the number of rows inserted.
+   */
+  insertTsvTasks: (afterId: TaskId | null, text: string) => number;
   /** Update existing tasks in-place from clipboard TSV (paste onto selection). */
   updateTasksFromTsv: (taskIds: string[], tsvText: string) => void;
   /** Apply multiple patches in a single commit (one undo step). Used for range paste. */
@@ -656,6 +662,60 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         });
       });
       set({ selectedTaskIds: new Set(newIds) });
+    },
+
+    insertTsvTasks(afterId, text) {
+      const dataRows = parseTsvDataRows(text);
+      if (dataRows.length === 0) return 0;
+      const newIds: TaskId[] = [];
+      commit((d) => {
+        const ref = afterId ? d.tasks.find((x) => x.id === afterId) : undefined;
+        // New rows become siblings of the reference task (or root-level when
+        // appending), inserted right after it.
+        const parentId = ref?.parentId ?? null;
+        const insertOrder = ref ? ref.order + 1 : d.tasks.filter((t) => t.parentId === parentId).length;
+        // Shift later siblings down to make room for the inserted block.
+        for (const t of d.tasks) {
+          if (t.parentId === parentId && t.order >= insertOrder) t.order += dataRows.length;
+        }
+        dataRows.forEach((cols, i) => {
+          const [rawName, rawStart, rawEnd] = cols;
+          const rawProgress = cols.length >= 5 ? cols[4] : cols[3];
+          const rawPriority = cols.length >= 6 ? cols[5] : undefined;
+          const name = (rawName || '새 작업').slice(0, 200);
+          const isValidISO = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+          const startDate = isValidISO(rawStart) ? rawStart : d.startDate;
+          const endDate = isValidISO(rawEnd) && rawEnd >= startDate ? rawEnd : startDate;
+          const progress = rawProgress
+            ? Math.min(100, Math.max(0, parseInt(rawProgress, 10) || 0))
+            : 0;
+          const priority = rawPriority ? (TSV_PRIORITY_MAP[rawPriority.toLowerCase()] ?? 'medium') : 'medium';
+          const id = nanoid(10);
+          newIds.push(id);
+          d.tasks.push({
+            id,
+            parentId,
+            name,
+            start: startDate,
+            end: endDate,
+            durationDays: Math.max(1, diffDaysISO(startDate, endDate) + 1),
+            progress,
+            priority,
+            assigneeIds: [],
+            notes: '',
+            isMilestone: false,
+            collapsed: false,
+            constraint: 'asap',
+            constraintDate: null,
+            manuallyScheduled: !!(isValidISO(rawStart) && isValidISO(rawEnd)),
+            order: insertOrder + i,
+            color: null,
+            cancelled: false,
+          });
+        });
+      });
+      set({ selectedTaskIds: new Set(newIds) });
+      return newIds.length;
     },
 
     updateTasksFromTsv(taskIds, tsvText) {

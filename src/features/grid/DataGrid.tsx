@@ -131,6 +131,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const indentTask         = useProjectStore((s) => s.indentTask);
   const outdentTask        = useProjectStore((s) => s.outdentTask);
   const importTsvTasks     = useProjectStore((s) => s.importTsvTasks);
+  const insertTsvTasks     = useProjectStore((s) => s.insertTsvTasks);
   const updateTasksFromTsv = useProjectStore((s) => s.updateTasksFromTsv);
   const batchUpdateTasks   = useProjectStore((s) => s.batchUpdateTasks);
   const moveTaskBefore     = useProjectStore((s) => s.moveTaskBefore);
@@ -169,6 +170,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const rangeAnchorRef       = useRef(rangeAnchor);
   const columnsRef           = useRef(columns);
   const importTsvTasksRef    = useRef(importTsvTasks);
+  const insertTsvTasksRef    = useRef(insertTsvTasks);
   const updateTasksFromTsvRef = useRef(updateTasksFromTsv);
   const batchUpdateTasksRef  = useRef(batchUpdateTasks);
 
@@ -188,6 +190,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   useEffect(() => { rangeAnchorRef.current = rangeAnchor; },         [rangeAnchor]);
   useEffect(() => { columnsRef.current = columns; },                 [columns]);
   useEffect(() => { importTsvTasksRef.current = importTsvTasks; },   [importTsvTasks]);
+  useEffect(() => { insertTsvTasksRef.current = insertTsvTasks; },   [insertTsvTasks]);
   useEffect(() => { updateTasksFromTsvRef.current = updateTasksFromTsv; }, [updateTasksFromTsv]);
   useEffect(() => { batchUpdateTasksRef.current = batchUpdateTasks; }, [batchUpdateTasks]);
 
@@ -474,6 +477,27 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         return;
       }
 
+      // Ctrl/Cmd+Shift+V: paste clipboard rows as NEW inserted tasks, after the
+      // last selected row (or appended at the end when nothing is selected).
+      if (key === 'v' && e.shiftKey) {
+        e.preventDefault();
+        void readClipboardText().then((text) => {
+          if (!text.trim()) return;
+          const curRows = rowsRef.current;
+          const curSel  = selectedRef.current;
+          let afterId: string | null = null;
+          if (cell) {
+            afterId = cell.taskId;
+          } else if (curSel.size > 0) {
+            // Insert after the last selected row in display order.
+            const selRows = curRows.filter((r) => curSel.has(r.task.id));
+            afterId = selRows.length ? selRows[selRows.length - 1]!.task.id : null;
+          }
+          insertTsvTasksRef.current(afterId, text);
+        });
+        return;
+      }
+
       if (key === 'v') {
         e.preventDefault();
         void readClipboardText().then((text) => {
@@ -637,6 +661,33 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           className="min-w-[160px] rounded-md border border-border bg-surface-2 py-1 shadow-xl text-xs"
           onMouseDown={(e) => e.stopPropagation()}
         >
+          {/* Paste-as-new-rows actions */}
+          <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wider text-content-muted">붙여넣기</div>
+          <button
+            className="w-full px-3 py-1.5 text-left hover:bg-surface-3"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => {
+              const id = contextMenu.taskId;
+              setContextMenu(null);
+              void readClipboardText().then((text) => {
+                if (text.trim()) insertTsvTasksRef.current(id, text);
+              });
+            }}
+          >
+            이 행 아래 붙여넣기 <span className="text-content-muted">(행 삽입)</span>
+          </button>
+          <button
+            className="w-full border-b border-border px-3 py-1.5 text-left hover:bg-surface-3"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => {
+              setContextMenu(null);
+              void readClipboardText().then((text) => {
+                if (text.trim()) insertTsvTasksRef.current(null, text);
+              });
+            }}
+          >
+            맨 아래에 붙여넣기
+          </button>
           {viewGroups.length === 0 ? (
             <div className="px-3 py-2 text-content-muted">보기 그룹이 없습니다</div>
           ) : (
