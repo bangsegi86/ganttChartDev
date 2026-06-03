@@ -3,6 +3,7 @@ import {
   ArrowUp,
   Ban,
   CalendarDays,
+  ChevronDown,
   Copy,
   Download,
   FilePlus2,
@@ -30,7 +31,8 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { Button } from '@/shared/ui/Button';
 import { ZOOM_ORDER, type ZoomLevel } from '@/features/gantt/zoom';
@@ -335,6 +337,7 @@ export function Toolbar({
         <Button size="sm" onClick={onOpenViewGroups} title="보기 그룹 관리">
           <Layers size={14} /> 그룹
         </Button>
+        <AssigneeFilterButton />
       </Group>
 
       <Divider />
@@ -392,6 +395,111 @@ function Group({ children }: { children: React.ReactNode }) {
 
 function Divider() {
   return <div className="mx-1 h-5 w-px bg-border" />;
+}
+
+// ---------------------------------------------------------------------------
+// Assignee filter dropdown
+// ---------------------------------------------------------------------------
+
+function AssigneeFilterButton() {
+  const resources = useProjectStore((s) => s.derived.project.resources);
+  const filterMode = useProjectStore((s) => s.view.filterMode);
+  const filterAssigneeIds = useProjectStore((s) => s.view.filterAssigneeIds);
+  const setViewFilter = useProjectStore((s) => s.setViewFilter);
+  const clearViewFilter = useProjectStore((s) => s.clearViewFilter);
+
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const isActive = filterMode === 'assignee' && filterAssigneeIds.length > 0;
+  const activeSet = new Set(isActive ? filterAssigneeIds : []);
+
+  const toggle = (id: string) => {
+    const next = new Set(activeSet);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    if (next.size === 0) clearViewFilter();
+    else setViewFilter('assignee', null, [...next]);
+  };
+
+  const openDropdown = () => {
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (rect) setPos({ top: rect.bottom + 4, left: rect.left });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      const panel = document.getElementById('assignee-filter-panel');
+      if (panel?.contains(e.target as Node) || btnRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    const tid = setTimeout(() => window.addEventListener('mousedown', close), 50);
+    return () => { clearTimeout(tid); window.removeEventListener('mousedown', close); };
+  }, [open]);
+
+  if (resources.length === 0) return null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={open ? () => setOpen(false) : openDropdown}
+        className={`inline-flex h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium transition-all select-none ${
+          isActive
+            ? 'border-accent/40 bg-accent/15 text-accent'
+            : 'border-border bg-surface-2 text-content hover:bg-surface-3'
+        }`}
+        title="담당자별 필터"
+      >
+        <span>담당자{isActive ? ` (${activeSet.size})` : ''}</span>
+        <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && createPortal(
+        <div
+          id="assignee-filter-panel"
+          style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
+          className="min-w-[180px] rounded-md border border-border bg-surface shadow-xl text-xs"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="border-b border-border px-3 py-2 font-semibold text-content-muted text-2xs uppercase tracking-wider">
+            담당자 필터
+          </div>
+          <div className="max-h-64 overflow-auto py-1">
+            {resources.map((r) => (
+              <label
+                key={r.id}
+                className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 hover:bg-surface-2"
+              >
+                <input
+                  type="checkbox"
+                  checked={activeSet.has(r.id)}
+                  onChange={() => toggle(r.id)}
+                  className="h-3.5 w-3.5 accent-[rgb(var(--color-accent))]"
+                />
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: r.color ?? '#888' }} />
+                <span className="flex-1 text-content">{r.name}</span>
+                {r.role && <span className="text-2xs text-content-muted">{r.role}</span>}
+              </label>
+            ))}
+          </div>
+          {isActive && (
+            <div className="border-t border-border px-3 py-1.5">
+              <button
+                onClick={() => { clearViewFilter(); setOpen(false); }}
+                className="text-2xs text-content-muted hover:text-content"
+              >
+                필터 초기화
+              </button>
+            </div>
+          )}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
 }
 
 function firstSelectedId(): string | undefined {

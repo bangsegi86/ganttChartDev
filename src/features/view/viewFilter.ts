@@ -3,7 +3,7 @@ import type { Task, TaskId, ViewGroup } from '@/entities';
 import { useProjectStore } from '@/app/store/useProjectStore';
 
 /** Which subset of tasks the grid/gantt/calendar should display. */
-export type FilterMode = 'all' | 'group' | 'focus';
+export type FilterMode = 'all' | 'group' | 'focus' | 'assignee';
 
 export interface ViewFilter {
   mode: FilterMode;
@@ -11,6 +11,8 @@ export interface ViewFilter {
   groupId: string | null;
   /** Snapshot of task ids to show when `mode === 'focus'`. */
   focusIds: TaskId[];
+  /** Resource ids to filter by when `mode === 'assignee'`. */
+  assigneeIds: string[];
 }
 
 /**
@@ -32,6 +34,11 @@ export function filterTasksForView(
     if (group) keep = new Set(group.taskIds);
   } else if (filter.mode === 'focus') {
     keep = new Set(filter.focusIds);
+  } else if (filter.mode === 'assignee' && filter.assigneeIds.length > 0) {
+    const ids = new Set(filter.assigneeIds);
+    keep = new Set(
+      tasks.filter((t) => t.assigneeIds.some((aid) => ids.has(aid))).map((t) => t.id),
+    );
   }
 
   if (!keep) return tasks;
@@ -56,8 +63,9 @@ export function useVisibleTasks(): Task[] {
   const mode = useProjectStore((s) => s.view.filterMode);
   const groupId = useProjectStore((s) => s.view.filterGroupId);
   const focusIds = useProjectStore((s) => s.view.focusIds);
+  const assigneeIds = useProjectStore((s) => s.view.filterAssigneeIds);
   return useMemo(
-    () => filterTasksForView(tasks, groups, { mode, groupId, focusIds }),
-    [tasks, groups, mode, groupId, focusIds],
+    () => filterTasksForView(tasks, groups, { mode, groupId, focusIds, assigneeIds }),
+    [tasks, groups, mode, groupId, focusIds, assigneeIds],
   );
 }

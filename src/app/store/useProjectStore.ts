@@ -41,6 +41,8 @@ interface ViewState {
   filterGroupId: string | null;
   /** Snapshot of task ids shown when `filterMode === 'focus'`. */
   focusIds: TaskId[];
+  /** Resource ids to show when `filterMode === 'assignee'`. */
+  filterAssigneeIds: string[];
   /** Fine zoom multiplier applied on top of the preset day-width (Ctrl+Wheel). */
   dayWidthScale: number;
 }
@@ -156,8 +158,8 @@ interface ProjectStore {
   toggleBaseline: () => void;
   setGridWidth: (width: number) => void;
   setActiveView: (view: ActiveView) => void;
-  /** Show all tasks, a specific view group, or the current selection only. */
-  setViewFilter: (mode: FilterMode, groupId?: string | null) => void;
+  /** Show all tasks, a specific view group, the current selection, or tasks by assignee. */
+  setViewFilter: (mode: FilterMode, groupId?: string | null, assigneeIds?: string[]) => void;
   clearViewFilter: () => void;
   /** Multiply the fine-zoom dayWidth scale (Ctrl+Wheel). Clamped to [0.1, 10]. */
   scaleDayWidth: (factor: number) => void;
@@ -264,6 +266,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       filterMode: 'all',
       filterGroupId: null,
       focusIds: [],
+      filterAssigneeIds: [],
       dayWidthScale: 1.0,
     },
 
@@ -959,17 +962,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     setActiveView(activeView) {
       set((s) => ({ view: { ...s.view, activeView } }));
     },
-    setViewFilter(mode, groupId = null) {
+    setViewFilter(mode, groupId = null, assigneeIds) {
       set((s) => {
         // "focus" snapshots the current selection so later clicks don't churn it.
         const focusIds = mode === 'focus' ? [...s.selectedTaskIds] : s.view.focusIds;
         // Ignore a focus request with nothing selected.
         if (mode === 'focus' && focusIds.length === 0) return {};
-        return { view: { ...s.view, filterMode: mode, filterGroupId: mode === 'group' ? groupId : null, focusIds } };
+        return {
+          view: {
+            ...s.view,
+            filterMode: mode,
+            filterGroupId: mode === 'group' ? groupId : null,
+            focusIds,
+            filterAssigneeIds: mode === 'assignee' ? (assigneeIds ?? []) : s.view.filterAssigneeIds,
+          },
+        };
       });
     },
     clearViewFilter() {
-      set((s) => ({ view: { ...s.view, filterMode: 'all', filterGroupId: null } }));
+      set((s) => ({ view: { ...s.view, filterMode: 'all', filterGroupId: null, filterAssigneeIds: [] } }));
     },
     scaleDayWidth(factor) {
       set((s) => ({
