@@ -102,6 +102,8 @@ interface ProjectStore {
   importTsvTasks: (text: string) => void;
   /** Update existing tasks in-place from clipboard TSV (paste onto selection). */
   updateTasksFromTsv: (taskIds: string[], tsvText: string) => void;
+  /** Apply multiple patches in a single commit (one undo step). Used for range paste. */
+  batchUpdateTasks: (updates: { id: TaskId; patch: Partial<Task> }[]) => void;
 
   // --- dependencies ---
   addDependency: (fromId: TaskId, toId: TaskId, type?: DependencyType) => boolean;
@@ -687,6 +689,24 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
             if (p) task.priority = p;
           }
         });
+      });
+    },
+
+    batchUpdateTasks(updates) {
+      if (updates.length === 0) return;
+      commit((d) => {
+        const norm = (v: string) =>
+          /^\d{8}$/.test(v) ? `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}` : v;
+        for (const { id, patch } of updates) {
+          const t = d.tasks.find((x) => x.id === id);
+          if (!t) continue;
+          const normalized: Partial<Task> = { ...patch };
+          if (typeof normalized.start === 'string') normalized.start = norm(normalized.start);
+          if (typeof normalized.end   === 'string') normalized.end   = norm(normalized.end);
+          Object.assign(t, normalized);
+          if (t.start > t.end) t.end = t.start;
+          if (patch.start !== undefined || patch.end !== undefined) t.manuallyScheduled = true;
+        }
       });
     },
 
