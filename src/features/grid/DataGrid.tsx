@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Diamond, GripVertical, Lock } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
@@ -278,8 +278,11 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     window.addEventListener('mouseup', up);
   };
 
-  // --- move active cell down after Enter-commit ---
-  const moveActiveCellDown = () => {
+  // --- stable per-row callbacks (referentially constant so GridRow's React.memo
+  //     can skip re-rendering unchanged rows while scrolling) ---
+
+  // move active cell down after Enter-commit
+  const moveActiveCellDown = useCallback(() => {
     const cur = selectedCellRef.current;
     if (!cur) return;
     const curRows = rowsRef.current;
@@ -290,7 +293,51 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     const newCell: CellPos = { taskId: next.task.id, colKey: cur.colKey };
     setSelectedCell(newCell);
     setRangeAnchor(newCell);
-  };
+  }, []);
+
+  const handleEditConsumed = useCallback(() => setEditRequest(null), []);
+
+  const handleCellSelect = useCallback((taskId: string, colKey: string, isShift: boolean) => {
+    const newCell: CellPos = { taskId, colKey };
+    setSelectedCell(newCell);
+    if (!isShift || !rangeAnchorRef.current) setRangeAnchor(newCell);
+    // Shift+click: keep existing anchor → range extends to this cell
+  }, []);
+
+  const handleRowSelect = useCallback((taskId: string, isCtrl: boolean, isShift: boolean) => {
+    const curRows = rowsRef.current;
+    if (isShift && anchorIdRef.current) {
+      const anchorIdx  = curRows.findIndex((r) => r.task.id === anchorIdRef.current);
+      const currentIdx = curRows.findIndex((r) => r.task.id === taskId);
+      if (anchorIdx !== -1 && currentIdx !== -1) {
+        const lo = Math.min(anchorIdx, currentIdx);
+        const hi = Math.max(anchorIdx, currentIdx);
+        setSelectedTaskIds(new Set(curRows.slice(lo, hi + 1).map((r) => r.task.id)));
+        return;
+      }
+    }
+    anchorIdRef.current = taskId;
+    selectTask(taskId, isCtrl);
+  }, [setSelectedTaskIds, selectTask]);
+
+  const handleToggle  = useCallback((taskId: string) => toggleCollapse(taskId), [toggleCollapse]);
+  const handleIndent  = useCallback((taskId: string) => indentTask(taskId),     [indentTask]);
+  const handleOutdent = useCallback((taskId: string) => outdentTask(taskId),     [outdentTask]);
+
+  const handleDragStart = useCallback((taskId: string) => { dragIdRef.current = taskId; }, []);
+  const handleDragEnd   = useCallback(() => { dragIdRef.current = null; setDropTargetId(null); }, []);
+  const handleDragOver  = useCallback((taskId: string) => setDropTargetId(taskId), []);
+  const handleDrop      = useCallback((taskId: string) => {
+    if (dragIdRef.current && taskId) moveTaskBefore(dragIdRef.current, taskId);
+    dragIdRef.current = null;
+    setDropTargetId(null);
+  }, [moveTaskBefore]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, taskId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, taskId });
+  }, []);
 
   // --- keyboard handler (capture phase, window-level) ---
   useEffect(() => {
@@ -549,45 +596,18 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
                 selectedCellKey={selectedCell?.taskId === row.task.id ? selectedCell.colKey : null}
                 rangeColKeys={rangeColKeys}
                 editRequest={editRequest?.taskId === row.task.id ? editRequest : null}
-                onEditConsumed={() => setEditRequest(null)}
+                onEditConsumed={handleEditConsumed}
                 onEditNavigate={moveActiveCellDown}
-                onCellSelect={(colKey, isShift) => {
-                  const newCell: CellPos = { taskId: row.task.id, colKey };
-                  setSelectedCell(newCell);
-                  if (!isShift || !rangeAnchor) setRangeAnchor(newCell);
-                  // Shift+click: keep existing anchor → range extends to this cell
-                }}
-                onSelect={(isCtrl, isShift) => {
-                  const id = row.task.id;
-                  if (isShift && anchorIdRef.current) {
-                    const anchorIdx  = rows.findIndex((r) => r.task.id === anchorIdRef.current);
-                    const currentIdx = rows.findIndex((r) => r.task.id === id);
-                    if (anchorIdx !== -1 && currentIdx !== -1) {
-                      const lo = Math.min(anchorIdx, currentIdx);
-                      const hi = Math.max(anchorIdx, currentIdx);
-                      setSelectedTaskIds(new Set(rows.slice(lo, hi + 1).map((r) => r.task.id)));
-                      return;
-                    }
-                  }
-                  anchorIdRef.current = id;
-                  selectTask(id, isCtrl);
-                }}
-                onToggle={() => toggleCollapse(row.task.id)}
-                onIndent={() => indentTask(row.task.id)}
-                onOutdent={() => outdentTask(row.task.id)}
-                onDragStart={() => { dragIdRef.current = row.task.id; }}
-                onDragEnd={() => { dragIdRef.current = null; setDropTargetId(null); }}
-                onDragOver={() => setDropTargetId(row.task.id)}
-                onDrop={() => {
-                  if (dragIdRef.current && dropTargetId) moveTaskBefore(dragIdRef.current, dropTargetId);
-                  dragIdRef.current = null;
-                  setDropTargetId(null);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setContextMenu({ x: e.clientX, y: e.clientY, taskId: row.task.id });
-                }}
+                onCellSelect={handleCellSelect}
+                onSelect={handleRowSelect}
+                onToggle={handleToggle}
+                onIndent={handleIndent}
+                onOutdent={handleOutdent}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onContextMenu={handleContextMenu}
               />
             );
           })}
@@ -661,19 +681,19 @@ interface GridRowProps {
   editRequest: EditRequest | null;
   onEditConsumed: () => void;
   onEditNavigate: () => void;
-  onSelect: (isCtrl: boolean, isShift: boolean) => void;
-  onCellSelect: (colKey: string, isShift: boolean) => void;
-  onToggle: () => void;
-  onIndent: () => void;
-  onOutdent: () => void;
-  onDragStart: () => void;
+  onSelect: (taskId: string, isCtrl: boolean, isShift: boolean) => void;
+  onCellSelect: (taskId: string, colKey: string, isShift: boolean) => void;
+  onToggle: (taskId: string) => void;
+  onIndent: (taskId: string) => void;
+  onOutdent: (taskId: string) => void;
+  onDragStart: (taskId: string) => void;
   onDragEnd: () => void;
-  onDragOver: () => void;
-  onDrop: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
+  onDragOver: (taskId: string) => void;
+  onDrop: (taskId: string) => void;
+  onContextMenu: (e: React.MouseEvent, taskId: string) => void;
 }
 
-function GridRow({
+const GridRow = memo(function GridRow({
   row,
   columns,
   top,
@@ -703,7 +723,7 @@ function GridRow({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Tab') {
       e.preventDefault();
-      if (e.shiftKey) onOutdent(); else onIndent();
+      if (e.shiftKey) onOutdent(task.id); else onIndent(task.id);
     }
   };
 
@@ -717,13 +737,13 @@ function GridRow({
       )}
       style={{ top, height: ROW_HEIGHT }}
       draggable
-      onMouseDown={(e) => onSelect(e.ctrlKey || e.metaKey, e.shiftKey)}
+      onMouseDown={(e) => onSelect(task.id, e.ctrlKey || e.metaKey, e.shiftKey)}
       onKeyDown={handleKeyDown}
-      onDragStart={(e) => { e.stopPropagation(); onDragStart(); }}
+      onDragStart={(e) => { e.stopPropagation(); onDragStart(task.id); }}
       onDragEnd={onDragEnd}
-      onDragOver={(e) => { e.preventDefault(); onDragOver(); }}
-      onDrop={(e) => { e.preventDefault(); onDrop(); }}
-      onContextMenu={onContextMenu}
+      onDragOver={(e) => { e.preventDefault(); onDragOver(task.id); }}
+      onDrop={(e) => { e.preventDefault(); onDrop(task.id); }}
+      onContextMenu={(e) => onContextMenu(e, task.id)}
       tabIndex={0}
       role="row"
       aria-selected={selected}
@@ -738,7 +758,7 @@ function GridRow({
         return (
           <div
             key={col.key}
-            onClick={(e) => { e.stopPropagation(); onCellSelect(col.key, e.shiftKey); }}
+            onClick={(e) => { e.stopPropagation(); onCellSelect(task.id, col.key, e.shiftKey); }}
             className={cn(
               'flex items-center overflow-hidden border-r border-border px-2',
               col.align === 'right'  && 'justify-end',
@@ -753,7 +773,7 @@ function GridRow({
               <div className="flex w-full items-center" style={{ paddingLeft: depth * 14 }}>
                 {hasChildren ? (
                   <button
-                    onClick={(e) => { e.stopPropagation(); onToggle(); }}
+                    onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
                     className="mr-1 text-content-muted hover:text-content"
                     aria-label={task.collapsed ? '펼치기' : '접기'}
                   >
@@ -811,7 +831,7 @@ function GridRow({
       })}
     </div>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // PriorityCell / AssigneeCell
