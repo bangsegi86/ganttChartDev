@@ -5,18 +5,39 @@ import { cn } from '@/shared/ui/cn';
 
 type EditableField = 'name' | 'start' | 'end' | 'progress';
 
+interface EditRequest {
+  taskId: string;
+  colKey: string;
+  initial: string | null;
+}
+
 interface GridCellProps {
   task: Task;
   field: EditableField;
   className?: string;
+  /** When non-null and matching this cell, begin editing. `initial` seeds the
+   *  draft: a single char (overwrite) or null (keep current value, F2 style). */
+  editRequest?: EditRequest | null;
+  /** Called once editing has begun, so the parent can clear the request. */
+  onEditConsumed?: () => void;
+  /** Called after committing with Enter, so the parent can move down a row. */
+  onEditNavigate?: () => void;
 }
 
 /**
- * Inline-editable grid cell. Double-click (or the global editing signal) turns
- * the cell into an input; Enter/blur commits through the store (which records
- * an undo step), Escape cancels.
+ * Inline-editable grid cell. Editing can be triggered by double-click, the
+ * global editing signal (name), or an Excel-style edit request from the grid
+ * (type-to-edit / F2). Enter/blur commits through the store (recording an undo
+ * step), Escape cancels; Enter additionally asks the grid to move down a row.
  */
-export function GridCell({ task, field, className }: GridCellProps) {
+export function GridCell({
+  task,
+  field,
+  className,
+  editRequest,
+  onEditConsumed,
+  onEditNavigate,
+}: GridCellProps) {
   const updateTask = useProjectStore((s) => s.updateTask);
   const editingTaskId = useProjectStore((s) => s.editingTaskId);
   const setEditing = useProjectStore((s) => s.setEditing);
@@ -24,6 +45,8 @@ export function GridCell({ task, field, className }: GridCellProps) {
   const [editing, setEditing_] = useState(false);
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  /** Whether to select-all (F2/double-click) vs put cursor at end (type-to-edit). */
+  const selectAllRef = useRef(true);
 
   // The gantt/grid can request editing of a task's name via the store.
   useEffect(() => {
@@ -33,16 +56,40 @@ export function GridCell({ task, field, className }: GridCellProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingTaskId]);
 
+  // Excel-style edit request from the grid (type-to-edit or F2).
+  useEffect(() => {
+    if (editRequest && editRequest.taskId === task.id && editRequest.colKey === field && !editing) {
+      begin(editRequest.initial);
+      onEditConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRequest]);
+
   useEffect(() => {
     if (editing) {
       inputRef.current?.focus();
-      inputRef.current?.select();
+      if (selectAllRef.current) {
+        inputRef.current?.select();
+      } else {
+        const el = inputRef.current;
+        if (el) {
+          const len = el.value.length;
+          el.setSelectionRange(len, len);
+        }
+      }
     }
   }, [editing]);
 
-  function begin(): void {
-    // Progress edits use the raw number, not the "%"-formatted display string.
-    setDraft(field === 'progress' ? String(task.progress) : displayValue(task, field));
+  function begin(initial?: string | null): void {
+    if (initial != null && initial !== '') {
+      // Type-to-edit: overwrite with the typed character, cursor at end.
+      setDraft(initial);
+      selectAllRef.current = false;
+    } else {
+      // F2 / double-click: keep current value, select all.
+      setDraft(field === 'progress' ? String(task.progress) : displayValue(task, field));
+      selectAllRef.current = true;
+    }
     setEditing_(true);
   }
 
@@ -82,8 +129,12 @@ export function GridCell({ task, field, className }: GridCellProps) {
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') commit();
-          else if (e.key === 'Escape') cancel();
+          if (e.key === 'Enter') {
+            commit();
+            onEditNavigate?.();
+          } else if (e.key === 'Escape') {
+            cancel();
+          }
           e.stopPropagation();
         }}
         onMouseDown={(e) => e.stopPropagation()}

@@ -74,6 +74,9 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; taskId: string } | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ taskId: string; colKey: string } | null>(null);
+  /** When set, the matching GridCell enters edit mode. `initial` seeds the
+   *  draft: a single char (type-to-edit, overwrite) or null (F2, keep value). */
+  const [editRequest, setEditRequest] = useState<{ taskId: string; colKey: string; initial: string | null } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -133,6 +136,18 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
 
   const PRIORITY_KO: Record<string, string> = { low: '낮음', medium: '보통', high: '높음', critical: '긴급' };
   const PRIORITY_FROM_KO: Record<string, string> = { '낮음': 'low', '보통': 'medium', '높음': 'high', '긴급': 'critical' };
+  const EDITABLE_FIELDS = ['name', 'start', 'end', 'progress'];
+
+  // Move the active cell down one row (used after committing an edit with Enter).
+  const moveActiveCellDown = () => {
+    setSelectedCell((cur) => {
+      if (!cur) return cur;
+      const r = rows.findIndex((x) => x.task.id === cur.taskId);
+      if (r < 0 || r >= rows.length - 1) return cur;
+      const next = rows[r + 1];
+      return next ? { taskId: next.task.id, colKey: cur.colKey } : cur;
+    });
+  };
 
   // Refs so the keydown handler never goes stale without re-registering.
   const rowsRef = useRef(rows);
@@ -191,11 +206,32 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
       const mod = e.ctrlKey || e.metaKey;
 
-      // --- Excel-style cell navigation (no modifier, not while editing) ---
+      // --- Excel-style cell navigation / editing (no modifier, not while editing) ---
       if (!mod && !isTextInput) {
+        // Let Alt+key combos (e.g. Alt+Arrow = move task) reach global shortcuts.
+        if (e.altKey) return;
         const cell = selectedCellRef.current;
+        if (!cell) return;
+        const editable = EDITABLE_FIELDS.includes(cell.colKey);
+
+        // F2 → edit existing value in place
+        if (e.key === 'F2' && editable) {
+          e.preventDefault();
+          setEditRequest({ taskId: cell.taskId, colKey: cell.colKey, initial: null });
+          return;
+        }
+        // Printable character → start editing with that char (overwrite).
+        // stopImmediatePropagation prevents global shortcuts (e.g. +/- zoom)
+        // from also firing on the same keystroke.
+        if (e.key.length === 1 && editable) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          setEditRequest({ taskId: cell.taskId, colKey: cell.colKey, initial: e.key });
+          return;
+        }
+
         const navKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'];
-        if (cell && navKeys.includes(e.key)) {
+        if (navKeys.includes(e.key)) {
           const curRows = rowsRef.current;
           const cols = columnsRef.current;
           let r = curRows.findIndex((x) => x.task.id === cell.taskId);
@@ -295,8 +331,13 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
       }
     };
 
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Capture phase so this handler reliably runs before the global
+    // shortcut listener (useKeyboardShortcuts), regardless of mount order.
+    // This lets stopImmediatePropagation in the type-to-edit branch block
+    // conflicting global shortcuts (e.g. +/- zoom) even after a view switch
+    // remounts the grid.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []); // empty deps — all values accessed via refs
 
   return (
@@ -364,6 +405,9 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
               critical={showCritical && (schedules.get(row.task.id)?.isCritical ?? false)}
               isDragOver={dropTargetId === row.task.id}
               selectedCellKey={selectedCell?.taskId === row.task.id ? selectedCell.colKey : null}
+              editRequest={editRequest?.taskId === row.task.id ? editRequest : null}
+              onEditConsumed={() => setEditRequest(null)}
+              onEditNavigate={moveActiveCellDown}
               onCellSelect={(colKey) => setSelectedCell({ taskId: row.task.id, colKey })}
               onSelect={(isCtrl, isShift) => {
                 const id = row.task.id;
@@ -453,6 +497,12 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   );
 }
 
+interface EditRequest {
+  taskId: string;
+  colKey: string;
+  initial: string | null;
+}
+
 interface GridRowProps {
   row: VisibleRow;
   columns: ColumnDef[];
@@ -461,6 +511,9 @@ interface GridRowProps {
   critical: boolean;
   isDragOver: boolean;
   selectedCellKey: string | null;
+  editRequest: EditRequest | null;
+  onEditConsumed: () => void;
+  onEditNavigate: () => void;
   onSelect: (isCtrl: boolean, isShift: boolean) => void;
   onCellSelect: (colKey: string) => void;
   onToggle: () => void;
@@ -481,6 +534,9 @@ function GridRow({
   critical,
   isDragOver,
   selectedCellKey,
+  editRequest,
+  onEditConsumed,
+  onEditNavigate,
   onSelect,
   onCellSelect,
   onToggle,
@@ -559,7 +615,14 @@ function GridRow({
                   {task.isMilestone && <Diamond size={11} className="text-violet-400" />}
                 </span>
               )}
-              <GridCell task={task} field="name" className={cn(hasChildren && 'font-semibold', task.cancelled && 'line-through text-content-muted')} />
+              <GridCell
+                task={task}
+                field="name"
+                className={cn(hasChildren && 'font-semibold', task.cancelled && 'line-through text-content-muted')}
+                editRequest={editRequest?.colKey === 'name' ? editRequest : null}
+                onEditConsumed={onEditConsumed}
+                onEditNavigate={onEditNavigate}
+              />
               {task.manuallyScheduled && (
                 <span title="수동 고정 — 의존성 무시됨. 작업 상세에서 해제 가능">
                   <Lock size={9} className="ml-1 shrink-0 text-content-muted/50" />
@@ -580,11 +643,29 @@ function GridRow({
           ) : col.key === 'assignee' ? (
             <AssigneeCell task={task} />
           ) : col.key === 'start' ? (
-            <GridCell task={task} field="start" />
+            <GridCell
+              task={task}
+              field="start"
+              editRequest={editRequest?.colKey === 'start' ? editRequest : null}
+              onEditConsumed={onEditConsumed}
+              onEditNavigate={onEditNavigate}
+            />
           ) : col.key === 'end' ? (
-            <GridCell task={task} field="end" />
+            <GridCell
+              task={task}
+              field="end"
+              editRequest={editRequest?.colKey === 'end' ? editRequest : null}
+              onEditConsumed={onEditConsumed}
+              onEditNavigate={onEditNavigate}
+            />
           ) : col.key === 'progress' ? (
-            <GridCell task={task} field="progress" />
+            <GridCell
+              task={task}
+              field="progress"
+              editRequest={editRequest?.colKey === 'progress' ? editRequest : null}
+              onEditConsumed={onEditConsumed}
+              onEditNavigate={onEditNavigate}
+            />
           ) : col.key === 'priority' ? (
             <PriorityCell task={task} />
           ) : null}
