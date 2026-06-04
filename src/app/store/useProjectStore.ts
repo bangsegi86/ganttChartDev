@@ -32,6 +32,7 @@ interface ViewState {
   zoom: ZoomLevel;
   showCriticalPath: boolean;
   showBaseline: boolean;
+  showTodayLine: boolean;
   /** Left grid pane width in pixels (resizable split). */
   gridWidth: number;
   activeView: ActiveView;
@@ -183,6 +184,7 @@ interface ProjectStore {
   zoomBy: (direction: 1 | -1) => void;
   toggleCriticalPath: () => void;
   toggleBaseline: () => void;
+  toggleTodayLine: () => void;
   setGridWidth: (width: number) => void;
   setActiveView: (view: ActiveView) => void;
   /** Show all tasks, a specific view group, the current selection, or tasks by assignee. */
@@ -297,6 +299,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       zoom: 'day',
       showCriticalPath: true,
       showBaseline: false,
+      showTodayLine: true,
       gridWidth: 460,
       activeView: 'gantt',
       filterMode: 'all',
@@ -1125,6 +1128,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
     toggleBaseline() {
       set((s) => ({ view: { ...s.view, showBaseline: !s.view.showBaseline } }));
+    },
+    toggleTodayLine() {
+      set((s) => ({ view: { ...s.view, showTodayLine: !s.view.showTodayLine } }));
     },
     setGridWidth(width) {
       set((s) => ({ view: { ...s.view, gridWidth: Math.max(240, Math.min(900, width)) } }));

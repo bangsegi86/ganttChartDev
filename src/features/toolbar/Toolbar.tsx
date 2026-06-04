@@ -29,6 +29,7 @@ import {
   Trash2,
   Undo2,
   Users,
+  CalendarClock,
   ChevronLeft as ZoomOut,
   ChevronRight as ZoomIn,
 } from 'lucide-react';
@@ -102,7 +103,8 @@ export function Toolbar({
   const redo = useProjectStore((s) => s.redo);
   const setZoom = useProjectStore((s) => s.setZoom);
   const zoomBy = useProjectStore((s) => s.zoomBy);
-  const toggleCritical = useProjectStore((s) => s.toggleCriticalPath);
+  const toggleCritical   = useProjectStore((s) => s.toggleCriticalPath);
+  const toggleTodayLine  = useProjectStore((s) => s.toggleTodayLine);
   const toggleTheme = useProjectStore((s) => s.toggleTheme);
   const saveProject = useProjectStore((s) => s.saveProject);
   const shareExport = useProjectStore((s) => s.shareExport);
@@ -273,6 +275,9 @@ export function Toolbar({
       <Group>
         <Button size="sm" active={view.showCriticalPath} onClick={toggleCritical} title="크리티컬 패스">
           <Route size={14} /> CP
+        </Button>
+        <Button size="sm" active={view.showTodayLine} onClick={toggleTodayLine} title="오늘 선 표시/숨기기">
+          <CalendarClock size={14} /> 오늘
         </Button>
         <Button size="sm" onClick={onOpenBaselines} title="베이스라인">
           <FlagTriangleRight size={14} /> 베이스라인

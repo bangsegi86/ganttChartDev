@@ -20,6 +20,7 @@ export interface GanttRenderModel {
   holidaySet: Set<string>;
   weekendDays: Set<number>;
   today: ISODate;
+  showTodayLine: boolean;
   showCritical: boolean;
   showBaseline: boolean;
   baseline: Map<TaskId, BaselineEntry> | null;
@@ -74,7 +75,7 @@ export function renderGanttBody(
 
   drawColumnShading(ctx, model, viewportW, viewportH, scrollLeft);
   drawGridLines(ctx, model, viewportW, viewportH, scrollLeft, scrollTop);
-  drawTodayLine(ctx, model, viewportH, scrollLeft);
+  if (model.showTodayLine) drawTodayLine(ctx, model, viewportH, scrollLeft);
   drawMarkers(ctx, model, viewportH, scrollLeft);
 
   // Visible row window.

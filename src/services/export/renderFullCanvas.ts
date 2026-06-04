@@ -64,6 +64,7 @@ export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
     holidaySet: new Set(project.holidays.map((h) => h.date)),
     weekendDays: new Set([0, 6].filter((d) => !project.calendar.workingWeekdays.includes(d))),
     today: new Date().toISOString().slice(0, 10),
+    showTodayLine: true,
     showCritical,
     showBaseline,
     baseline,

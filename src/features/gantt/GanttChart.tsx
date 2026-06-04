@@ -220,6 +220,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       holidaySet: new Set(project.holidays.map((h) => h.date)),
       weekendDays: new Set([0, 6].filter((d) => !project.calendar.workingWeekdays.includes(d))),
       today: new Date().toISOString().slice(0, 10),
+      showTodayLine: view.showTodayLine,
       showCritical: view.showCriticalPath,
       showBaseline: view.showBaseline,
       baseline: baselineMap,
