@@ -45,6 +45,12 @@ interface ViewState {
   filterAssigneeIds: string[];
   /** Fine zoom multiplier applied on top of the preset day-width (Ctrl+Wheel). */
   dayWidthScale: number;
+  /**
+   * One-shot scroll request for the gantt: when non-null the GanttChart will
+   * scroll so this ISO date is near the left edge of the viewport, then clear
+   * the field back to null.
+   */
+  ganttScrollTo: string | null;
 }
 
 interface ClipboardState {
@@ -175,6 +181,15 @@ interface ProjectStore {
   scaleDayWidth: (factor: number) => void;
   /** Set the fine-zoom dayWidth scale directly. Clamped to [0.1, 10]. */
   setDayWidthScale: (scale: number) => void;
+  /**
+   * Sort the direct children of the given task by their start date (ascending).
+   * Sibling order values are reassigned; the subtrees themselves are untouched.
+   */
+  sortChildrenByStart: (parentId: TaskId) => void;
+  /** Ask the GanttChart to scroll so `date` is visible near the left edge. */
+  scrollGanttToDate: (date: string) => void;
+  /** Called by GanttChart after it has consumed a scrollGanttToDate request. */
+  clearGanttScroll: () => void;
 }
 
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -278,6 +293,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       focusIds: [],
       filterAssigneeIds: [],
       dayWidthScale: 1.0,
+      ganttScrollTo: null,
     },
 
     newProject(name) {
@@ -1062,6 +1078,31 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
     setDayWidthScale(scale) {
       set((s) => ({ view: { ...s.view, dayWidthScale: Math.max(0.1, Math.min(10, scale)) } }));
+    },
+
+    sortChildrenByStart(parentId) {
+      commit((d) => {
+        const children = d.tasks.filter((t) => t.parentId === parentId);
+        if (children.length < 2) return;
+        children.sort((a, b) => a.start.localeCompare(b.start));
+        children.forEach((t, i) => { t.order = i; });
+        // Shift all other siblings' orders above the re-used range so there
+        // are no collisions with unrelated siblings at the same parent level.
+        const maxOrder = children.length;
+        for (const t of d.tasks) {
+          if (t.parentId === parentId && !children.includes(t)) {
+            t.order += maxOrder;
+          }
+        }
+      });
+    },
+
+    scrollGanttToDate(date) {
+      set((s) => ({ view: { ...s.view, ganttScrollTo: date } }));
+    },
+
+    clearGanttScroll() {
+      set((s) => ({ view: { ...s.view, ganttScrollTo: null } }));
     },
   };
 });

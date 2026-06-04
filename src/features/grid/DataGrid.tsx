@@ -137,6 +137,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const updateTasksFromTsv = useProjectStore((s) => s.updateTasksFromTsv);
   const batchUpdateTasks   = useProjectStore((s) => s.batchUpdateTasks);
   const moveTaskBefore     = useProjectStore((s) => s.moveTaskBefore);
+  const sortChildrenByStart = useProjectStore((s) => s.sortChildrenByStart);
+  const scrollGanttToDate  = useProjectStore((s) => s.scrollGanttToDate);
   const addTasksToGroup    = useProjectStore((s) => s.addTasksToGroup);
   const removeTasksFromGroup = useProjectStore((s) => s.removeTasksFromGroup);
   const viewGroups         = useProjectStore((s) => s.derived.project.viewGroups);
@@ -682,6 +684,37 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           className="min-w-[160px] rounded-md border border-border bg-surface-2 py-1 shadow-xl text-xs"
           onMouseDown={(e) => e.stopPropagation()}
         >
+          {/* Sort / scroll actions */}
+          {(() => {
+            const menuRow = rows.find((r) => r.task.id === contextMenu.taskId);
+            return (
+              <>
+                <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wider text-content-muted">정렬 / 이동</div>
+                <button
+                  className="w-full px-3 py-1.5 text-left hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={!menuRow?.hasChildren}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => {
+                    sortChildrenByStart(contextMenu.taskId);
+                    setContextMenu(null);
+                  }}
+                  title={menuRow?.hasChildren ? undefined : '하위 일정이 없습니다'}
+                >
+                  하위 일정 시작일 순 정렬
+                </button>
+                <button
+                  className="w-full border-b border-border px-3 py-1.5 text-left hover:bg-surface-3"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => {
+                    if (menuRow) scrollGanttToDate(menuRow.task.start);
+                    setContextMenu(null);
+                  }}
+                >
+                  차트에서 시작일로 이동
+                </button>
+              </>
+            );
+          })()}
           {/* Paste-as-new-rows actions */}
           <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wider text-content-muted">붙여넣기</div>
           <button

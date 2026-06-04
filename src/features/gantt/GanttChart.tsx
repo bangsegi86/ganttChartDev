@@ -84,6 +84,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const linkSourceId = useProjectStore((s) => s.linkSourceId);
   const scaleDayWidth = useProjectStore((s) => s.scaleDayWidth);
   const setDayWidthScale = useProjectStore((s) => s.setDayWidthScale);
+  const ganttScrollTo = useProjectStore((s) => s.view.ganttScrollTo);
+  const clearGanttScroll = useProjectStore((s) => s.clearGanttScroll);
 
   const project = derived.project;
   const zoomConfig = ZOOM_CONFIGS[view.zoom];
@@ -349,6 +351,18 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     draw();
     requestAnimationFrame(() => { isSyncingRef.current = false; });
   }, [scrollTop, draw]);
+
+  // Scroll gantt horizontally to show a requested date near the left edge.
+  useEffect(() => {
+    if (!ganttScrollTo) return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const x = timeline.xFor(ganttScrollTo);
+    // Offset by a small margin so the bar isn't flush with the edge.
+    scroller.scrollLeft = Math.max(0, x - timeline.dayWidth * 2);
+    draw();
+    clearGanttScroll();
+  }, [ganttScrollTo, timeline, draw, clearGanttScroll]);
 
   // --------------------------------------------------------------------------
   // Hit-test
