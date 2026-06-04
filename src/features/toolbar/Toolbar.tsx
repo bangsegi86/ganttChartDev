@@ -12,6 +12,7 @@ import {
   FileText,
   FlagTriangleRight,
   FolderOpen,
+  Globe,
   Image,
   Indent,
   Layers,
@@ -38,6 +39,7 @@ import { Button } from '@/shared/ui/Button';
 import { ZOOM_ORDER, type ZoomLevel } from '@/features/gantt/zoom';
 import { exportExcel } from '@/services/export/exportExcel';
 import { exportPdf, exportPng } from '@/services/export/exportImage';
+import { exportHtml } from '@/services/export/exportHtml';
 
 const ZOOM_LABELS: Record<ZoomLevel, string> = {
   hour: '시간',
@@ -124,30 +126,22 @@ export function Toolbar({
     if (nameDraft.trim()) renameProject(nameDraft.trim());
   };
 
-  const exportNow = async (kind: 'excel' | 'png' | 'pdf') => {
+  const exportNow = async (kind: 'excel' | 'png' | 'pdf' | 'html') => {
     const state = useProjectStore.getState();
     const { project, schedules } = state.derived;
     const name = project.name || 'gantt';
-    if (kind === 'excel') await exportExcel(project, name, {
+    const baseInput = {
       project,
       schedules,
       zoom: state.view.zoom,
       theme: state.view.theme,
       showCritical: state.view.showCriticalPath,
       showBaseline: state.view.showBaseline,
-    });
-    else {
-      const input = {
-        project,
-        schedules,
-        zoom: state.view.zoom,
-        theme: state.view.theme,
-        showCritical: state.view.showCriticalPath,
-        showBaseline: state.view.showBaseline,
-      };
-      if (kind === 'png') await exportPng(input, name);
-      else await exportPdf(input, name);
-    }
+    };
+    if (kind === 'excel') await exportExcel(project, name, baseInput);
+    else if (kind === 'html') await exportHtml(baseInput, name);
+    else if (kind === 'png') await exportPng(baseInput, name);
+    else await exportPdf(baseInput, name);
   };
 
   return (
@@ -357,6 +351,9 @@ export function Toolbar({
       <div className="ml-auto flex items-center gap-1">
         <Button size="sm" onClick={() => void exportNow('excel')} title="엑셀 내보내기">
           <FileSpreadsheet size={14} />
+        </Button>
+        <Button size="sm" onClick={() => void exportNow('html')} title="HTML 내보내기 (인터랙티브)">
+          <Globe size={14} />
         </Button>
         <Button size="sm" onClick={() => void exportNow('png')} title="PNG 내보내기">
           <Image size={14} />
