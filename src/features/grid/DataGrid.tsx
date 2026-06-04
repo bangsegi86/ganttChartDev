@@ -135,6 +135,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const updateTasksFromTsv = useProjectStore((s) => s.updateTasksFromTsv);
   const batchUpdateTasks   = useProjectStore((s) => s.batchUpdateTasks);
   const moveTaskBefore     = useProjectStore((s) => s.moveTaskBefore);
+  const moveTasks          = useProjectStore((s) => s.moveTasks);
   const addTask            = useProjectStore((s) => s.addTask);
   const addTaskBefore      = useProjectStore((s) => s.addTaskBefore);
   const sortChildrenByStart = useProjectStore((s) => s.sortChildrenByStart);
@@ -149,6 +150,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [contextMenu, setContextMenu]   = useState<{ x: number; y: number; taskId: string } | null>(null);
   const [groupSubmenuOpen, setGroupSubmenuOpen] = useState(false);
+  /** Tasks marked for a cut/move (right-click 잘라내기). Empty = nothing cut. */
+  const [cutTaskIds, setCutTaskIds] = useState<Set<string>>(new Set());
   /** Active cell (moving end of the selection range). */
   const [selectedCell, setSelectedCell] = useState<CellPos | null>(null);
   /** Fixed anchor of the range (Shift+click/Shift+Arrow keeps this while moving active cell). */
@@ -363,8 +366,9 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
       if (!mod && !isTextInput) {
         if (e.altKey) return; // pass Alt+key to global shortcuts
 
-        // Escape: clear selection range
+        // Escape: clear selection range + cancel any pending cut
         if (e.key === 'Escape') {
+          setCutTaskIds((prev) => (prev.size ? new Set() : prev));
           if (cell) {
             e.preventDefault();
             setSelectedCell(null);
@@ -664,6 +668,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
                 columns={columns}
                 top={rowIdx * ROW_HEIGHT}
                 selected={selected.has(row.task.id)}
+                isCut={cutTaskIds.has(row.task.id)}
                 critical={showCritical && (schedules.get(row.task.id)?.isCritical ?? false)}
                 isDragOver={dropTargetId === row.task.id}
                 selectedCellKey={selectedCell?.taskId === row.task.id ? selectedCell.colKey : null}
@@ -691,10 +696,24 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           contextMenu={contextMenu}
           rows={rows}
           selected={selected}
+          cutCount={cutTaskIds.size}
+          isTargetCut={cutTaskIds.has(contextMenu.taskId)}
           viewGroups={viewGroups}
           groupSubmenuOpen={groupSubmenuOpen}
           setGroupSubmenuOpen={setGroupSubmenuOpen}
           onClose={() => { setContextMenu(null); setGroupSubmenuOpen(false); }}
+          onCut={(ids) => setCutTaskIds(new Set(ids))}
+          onPasteAsChild={(targetId) => {
+            if (cutTaskIds.size === 0) return;
+            moveTasks([...cutTaskIds], targetId, null);
+            setCutTaskIds(new Set());
+          }}
+          onPasteAsSibling={(targetId) => {
+            if (cutTaskIds.size === 0) return;
+            const target = rowsRef.current.find((r) => r.task.id === targetId);
+            moveTasks([...cutTaskIds], target?.task.parentId ?? null, targetId);
+            setCutTaskIds(new Set());
+          }}
           onAddBefore={(id) => addTaskBefore(id)}
           onAddAfter={(id) => addTask(id)}
           onToggleCollapse={(id) => toggleCollapse(id)}
@@ -741,10 +760,17 @@ interface ContextMenuProps {
   contextMenu: { x: number; y: number; taskId: string };
   rows: VisibleRow[];
   selected: Set<string>;
+  /** Number of tasks currently marked for a move (cut). 0 = nothing cut. */
+  cutCount: number;
+  /** True when the right-clicked task is itself part of the cut set. */
+  isTargetCut: boolean;
   viewGroups: { id: string; name: string; color: string; taskIds: string[] }[];
   groupSubmenuOpen: boolean;
   setGroupSubmenuOpen: (v: boolean) => void;
   onClose: () => void;
+  onCut: (ids: string[]) => void;
+  onPasteAsChild: (targetId: string) => void;
+  onPasteAsSibling: (targetId: string) => void;
   onAddBefore: (id: string) => void;
   onAddAfter: (id: string) => void;
   onToggleCollapse: (id: string) => void;
@@ -757,8 +783,9 @@ interface ContextMenuProps {
 }
 
 function ContextMenu({
-  contextMenu, rows, selected, viewGroups,
+  contextMenu, rows, selected, cutCount, isTargetCut, viewGroups,
   groupSubmenuOpen, setGroupSubmenuOpen, onClose,
+  onCut, onPasteAsChild, onPasteAsSibling,
   onAddBefore, onAddAfter, onToggleCollapse,
   onSortChildren, onScrollToDate, onCopyRows,
   onPasteAfter, onPasteEnd, onGroupToggle,
@@ -767,9 +794,10 @@ function ContextMenu({
   const taskId  = contextMenu.taskId;
   const isCollapsed = menuRow?.task.collapsed ?? false;
 
-  // Decide which ids to copy: if right-clicked task is in the selection, copy
-  // the whole selection; otherwise copy only the right-clicked task.
-  const copyIds = selected.has(taskId) && selected.size > 1 ? selected : new Set([taskId]);
+  // Decide which ids to act on: if the right-clicked task is in the selection,
+  // act on the whole selection; otherwise act on just the right-clicked task.
+  const targetIds = selected.has(taskId) && selected.size > 1 ? [...selected] : [taskId];
+  const copyIds = new Set(targetIds);
 
   const item = (label: React.ReactNode, onClick: () => void, disabled = false) => (
     <button
@@ -819,8 +847,35 @@ function ContextMenu({
 
       {divider()}
 
-      {/* 3. 차트 이동 */}
-      {section('이동')}
+      {/* 3. 잘라내기 → 다른 위치로 이동(붙여넣기) */}
+      {section('행 이동')}
+      {item(
+        targetIds.length > 1 ? `잘라내기 (${targetIds.length}개)` : '잘라내기',
+        () => { onCut(targetIds); onClose(); },
+      )}
+      {cutCount > 0 && (
+        <>
+          {item(
+            isTargetCut
+              ? '여기 하위로 붙여넣기 (대상 자신 불가)'
+              : `여기 하위로 붙여넣기${cutCount > 1 ? ` (${cutCount}개)` : ''}`,
+            () => { onPasteAsChild(taskId); onClose(); },
+            isTargetCut,
+          )}
+          {item(
+            isTargetCut
+              ? '이 행 다음으로 붙여넣기 (대상 자신 불가)'
+              : `이 행 다음으로 붙여넣기${cutCount > 1 ? ` (${cutCount}개)` : ''}`,
+            () => { onPasteAsSibling(taskId); onClose(); },
+            isTargetCut,
+          )}
+        </>
+      )}
+
+      {divider()}
+
+      {/* 4. 차트 이동 */}
+      {section('차트')}
       {item('차트에서 시작일로 이동', () => { if (menuRow) onScrollToDate(menuRow.task.start); onClose(); })}
 
       {divider()}
@@ -906,6 +961,8 @@ interface GridRowProps {
   columns: ColumnDef[];
   top: number;
   selected: boolean;
+  /** True while this row is marked for a pending cut/move. */
+  isCut: boolean;
   critical: boolean;
   isDragOver: boolean;
   selectedCellKey: string | null;
@@ -929,6 +986,7 @@ const GridRow = memo(function GridRow({
   columns,
   top,
   selected,
+  isCut,
   critical,
   isDragOver,
   selectedCellKey,
@@ -955,6 +1013,7 @@ const GridRow = memo(function GridRow({
         'absolute left-0 flex w-full items-stretch border-b border-border text-xs group/row',
         task.cancelled && 'opacity-50',
         selected ? 'bg-accent/15' : hasChildren ? 'bg-surface-2/40' : 'hover:bg-surface-2/60',
+        isCut && 'opacity-60 outline-dashed outline-1 -outline-offset-1 outline-accent/60',
         isDragOver && 'shadow-[0_-2px_0_0_rgb(var(--color-accent))]',
       )}
       style={{ top, height: ROW_HEIGHT }}

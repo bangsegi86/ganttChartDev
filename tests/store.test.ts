@@ -116,6 +116,40 @@ describe('project store (integration)', () => {
     expect(a.progress).toBe(30);
   });
 
+  it('reparents a task into another parent via moveTasks (cut → paste as child)', () => {
+    // design-1 starts under 'design'; move it to become a child of 'dev'.
+    expect(currentTask('design-1').parentId).toBe('design');
+    useProjectStore.getState().moveTasks(['design-1'], 'dev', null);
+
+    const moved = currentTask('design-1');
+    expect(moved.parentId).toBe('dev');
+    // Appended at the end of dev's children → highest order among them.
+    const devChildren = useProjectStore
+      .getState()
+      .derived.project.tasks.filter((t) => t.parentId === 'dev');
+    const maxOrder = Math.max(...devChildren.map((t) => t.order));
+    expect(moved.order).toBe(maxOrder);
+  });
+
+  it('moveTasks refuses to move a task into its own descendant', () => {
+    // 'design' is the parent of 'design-1'; moving design under design-1 must no-op.
+    useProjectStore.getState().moveTasks(['design'], 'design-1', null);
+    expect(currentTask('design').parentId).toBe(null);
+    expect(currentTask('design-1').parentId).toBe('design');
+  });
+
+  it('moveTasks inserts as a sibling right after the target (paste as sibling)', () => {
+    // Move design-1 to sit directly after dev-1 among dev's children.
+    useProjectStore.getState().moveTasks(['design-1'], 'dev', 'dev-1');
+    const devChildren = useProjectStore
+      .getState()
+      .derived.project.tasks
+      .filter((t) => t.parentId === 'dev')
+      .sort((a, b) => a.order - b.order);
+    const idx = devChildren.findIndex((t) => t.id === 'dev-1');
+    expect(devChildren[idx + 1]!.id).toBe('design-1');
+  });
+
   it('captures a baseline snapshot of the current plan', () => {
     useProjectStore.getState().captureBaseline('초기 계획');
     const p = useProjectStore.getState().derived.project;

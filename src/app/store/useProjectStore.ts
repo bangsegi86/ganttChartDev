@@ -109,6 +109,15 @@ interface ProjectStore {
   moveTaskDown: (id: TaskId) => void;
   /** Move draggedId immediately before targetId in the sibling order. */
   moveTaskBefore: (draggedId: TaskId, targetId: TaskId) => void;
+  /**
+   * Reparent one or more tasks (with their whole subtrees) under `newParentId`
+   * (null = root level). When `afterId` is a child of the new parent the moved
+   * block is inserted right after it; otherwise it is appended at the end.
+   * Cut items nested inside another cut item are skipped (they ride along with
+   * their ancestor). Moving a task into itself or its own descendant is a no-op.
+   * This is what powers the right-click 잘라내기 → 붙여넣기 reparent flow.
+   */
+  moveTasks: (taskIds: TaskId[], newParentId: TaskId | null, afterId: TaskId | null) => void;
   duplicateSelected: () => void;
   copySelected: () => void;
   paste: () => void;
@@ -615,6 +624,56 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         siblings.splice(insertAt, 0, item!);
         siblings.forEach((s, i) => { s.order = i; });
       });
+    },
+
+    moveTasks(taskIds, newParentId, afterId) {
+      if (taskIds.length === 0) return;
+      const ids = new Set(taskIds);
+      commit((d) => {
+        if (newParentId !== null && !d.tasks.some((t) => t.id === newParentId)) return;
+
+        const parentOf = (id: TaskId | null): TaskId | null =>
+          id ? (d.tasks.find((t) => t.id === id)?.parentId ?? null) : null;
+        const isDescendantOf = (maybeChild: TaskId, ancestor: TaskId): boolean => {
+          let p: TaskId | null = parentOf(maybeChild);
+          while (p) {
+            if (p === ancestor) return true;
+            p = parentOf(p);
+          }
+          return false;
+        };
+
+        // Refuse to move a task into itself or into one of its own descendants.
+        if (newParentId !== null) {
+          for (const id of ids) {
+            if (id === newParentId || isDescendantOf(newParentId, id)) return;
+          }
+        }
+
+        // Top-level movers only: a cut child whose ancestor is also cut rides
+        // along with that ancestor's subtree, so skip it here.
+        const movers = d.tasks
+          .filter((t) => ids.has(t.id))
+          .filter((t) => ![...ids].some((other) => other !== t.id && isDescendantOf(t.id, other)))
+          .sort((a, b) => a.order - b.order);
+        if (movers.length === 0) return;
+
+        const moverSet = new Set(movers.map((m) => m.id));
+        const dest = d.tasks
+          .filter((t) => t.parentId === newParentId && !moverSet.has(t.id))
+          .sort((a, b) => a.order - b.order);
+
+        let insertAt = dest.length; // default: append at end
+        if (afterId) {
+          const idx = dest.findIndex((t) => t.id === afterId);
+          if (idx !== -1) insertAt = idx + 1;
+        }
+
+        for (const m of movers) m.parentId = newParentId;
+        const combined = [...dest.slice(0, insertAt), ...movers, ...dest.slice(insertAt)];
+        combined.forEach((t, i) => { t.order = i; });
+      });
+      set({ selectedTaskIds: new Set(taskIds) });
     },
 
     duplicateSelected() {
