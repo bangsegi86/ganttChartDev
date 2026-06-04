@@ -6,7 +6,7 @@ import { buildVisibleRows, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
 import { HEADER_HEIGHT, ROW_HEIGHT, SCROLL_BOTTOM_PADDING } from '@/features/gantt/layout';
 import { cn } from '@/shared/ui/cn';
-import type { Priority, Task } from '@/entities';
+import type { Priority, Resource, Task } from '@/entities';
 import { GridCell } from './GridCell';
 import { readClipboardText, writeClipboardText } from '@/shared/clipboard';
 
@@ -46,7 +46,10 @@ const PRIORITY_KO: Record<string, string> = {
 const PRIORITY_FROM_KO: Record<string, string> = {
   '낮음': 'low', '보통': 'medium', '높음': 'high', '긴급': 'critical',
 };
-const EDITABLE_COLS = new Set(['name', 'start', 'end', 'progress']);
+/** Columns editable via keyboard (type-to-edit, F2). */
+const EDITABLE_COLS  = new Set(['name', 'start', 'end', 'progress']);
+/** Columns included in copy & paste (superset of EDITABLE_COLS). */
+const PASTEABLE_COLS = new Set(['name', 'start', 'end', 'progress', 'assignee']);
 
 type CellPos = { taskId: string; colKey: string };
 
@@ -57,7 +60,7 @@ export interface EditRequest {
 }
 
 /** Read a cell value as a plain string (for copy). */
-function getCellText(task: Task, colKey: string): string {
+function getCellText(task: Task, colKey: string, resources?: Resource[]): string {
   switch (colKey) {
     case 'name':     return task.name;
     case 'start':    return task.start;
@@ -65,6 +68,9 @@ function getCellText(task: Task, colKey: string): string {
     case 'progress': return String(task.progress);
     case 'priority': return PRIORITY_KO[task.priority] ?? task.priority;
     case 'duration': return String(task.durationDays);
+    case 'assignee':
+      if (!resources) return '';
+      return resources.filter((r) => task.assigneeIds.includes(r.id)).map((r) => r.name).join(', ');
     default:         return '';
   }
 }
@@ -77,7 +83,7 @@ function normalizeDate(v: string): string | null {
 }
 
 /** Convert a pasted string value into a Task patch for a given column. Returns null if invalid/read-only. */
-function parseCellPatch(colKey: string, raw: string): Partial<Task> | null {
+function parseCellPatch(colKey: string, raw: string, resources?: Resource[]): Partial<Task> | null {
   const v = raw.trim();
   if (!v) return null;
   switch (colKey) {
@@ -91,6 +97,12 @@ function parseCellPatch(colKey: string, raw: string): Partial<Task> | null {
     case 'priority': {
       const p = PRIORITY_FROM_KO[v] ?? (['low', 'medium', 'high', 'critical'].includes(v) ? v : null);
       return p ? { priority: p as Priority } : null;
+    }
+    case 'assignee': {
+      if (!resources) return null;
+      const names = v.split(',').map((n) => n.trim().toLowerCase()).filter(Boolean);
+      const ids = resources.filter((r) => names.includes(r.name.toLowerCase())).map((r) => r.id);
+      return { assigneeIds: ids };
     }
     default: return null;
   }
@@ -143,6 +155,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const addTasksToGroup    = useProjectStore((s) => s.addTasksToGroup);
   const removeTasksFromGroup = useProjectStore((s) => s.removeTasksFromGroup);
   const viewGroups         = useProjectStore((s) => s.derived.project.viewGroups);
+  const resources          = useProjectStore((s) => s.derived.project.resources);
 
   // --- state ---
   const [columns, setColumns]       = useState(DEFAULT_COLUMNS);
@@ -181,6 +194,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const insertTsvTasksRef    = useRef(insertTsvTasks);
   const updateTasksFromTsvRef = useRef(updateTasksFromTsv);
   const batchUpdateTasksRef  = useRef(batchUpdateTasks);
+  const resourcesRef         = useRef(resources);
 
   // --- derived rows ---
   const visibleTasks = useVisibleTasks();
@@ -202,6 +216,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   useEffect(() => { insertTsvTasksRef.current = insertTsvTasks; },   [insertTsvTasks]);
   useEffect(() => { updateTasksFromTsvRef.current = updateTasksFromTsv; }, [updateTasksFromTsv]);
   useEffect(() => { batchUpdateTasksRef.current = batchUpdateTasks; }, [batchUpdateTasks]);
+  useEffect(() => { resourcesRef.current = resources; },               [resources]);
 
   // --- scroll sync (gantt → grid) ---
   useEffect(() => {
@@ -476,8 +491,9 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           const minR = Math.min(ar, sr), maxR = Math.max(ar, sr);
           const minC = Math.min(ac, sc), maxC = Math.max(ac, sc);
           const rangeCols = curCols.slice(minC, maxC + 1);
+          const res = resourcesRef.current;
           const tsv = curRows.slice(minR, maxR + 1)
-            .map((row) => rangeCols.map((col) => getCellText(row.task, col.key)).join('\t'))
+            .map((row) => rangeCols.map((col) => getCellText(row.task, col.key, res)).join('\t'))
             .join('\n');
           void writeClipboardText(tsv);
           return;
@@ -527,9 +543,11 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           const curRows = rowsRef.current;
           const curCols = columnsRef.current;
 
+          const res = resourcesRef.current;
+
           // Single-value paste into active cell
           if (cell && !isMultiValue) {
-            const patch = parseCellPatch(cell.colKey, trimmed);
+            const patch = parseCellPatch(cell.colKey, trimmed, res);
             if (patch) batchUpdateTasksRef.current([{ id: cell.taskId, patch }]);
             return;
           }
@@ -554,8 +572,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
                 const colIdx = startC + dc;
                 if (colIdx >= curCols.length) break;
                 const col = curCols[colIdx];
-                if (!col || !EDITABLE_COLS.has(col.key)) continue;
-                const patch = parseCellPatch(col.key, rowVals[dc] ?? '');
+                if (!col || !PASTEABLE_COLS.has(col.key)) continue;
+                const patch = parseCellPatch(col.key, rowVals[dc] ?? '', res);
                 if (patch) Object.assign(merged, patch);
               }
               if (Object.keys(merged).length > 0) updates.push({ id: taskId, patch: merged });
