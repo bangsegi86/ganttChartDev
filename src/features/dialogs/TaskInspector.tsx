@@ -1,21 +1,34 @@
 import { Modal } from '@/shared/ui/Modal';
 import { useProjectStore } from '@/app/store/useProjectStore';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { ConstraintType, Priority } from '@/entities';
+import { addDaysISO } from '@/shared/date/dateUtils';
+import { CalendarDays } from 'lucide-react';
 
-const PRIORITIES: { value: Priority; label: string }[] = [
-  { value: 'low', label: '낮음' },
-  { value: 'medium', label: '보통' },
-  { value: 'high', label: '높음' },
-  { value: 'critical', label: '긴급' },
+const PRIORITIES: { value: Priority; label: string; color: string }[] = [
+  { value: 'low',      label: '낮음', color: 'bg-surface-3 text-content-muted' },
+  { value: 'medium',   label: '보통', color: 'bg-blue-500/20 text-blue-400' },
+  { value: 'high',     label: '높음', color: 'bg-amber-500/20 text-amber-500' },
+  { value: 'critical', label: '긴급', color: 'bg-critical/20 text-critical' },
 ];
 
 const CONSTRAINTS: { value: ConstraintType; label: string }[] = [
   { value: 'asap', label: '가능한 빨리 (ASAP)' },
   { value: 'snet', label: '이 날짜 이후 시작 (SNET)' },
-  { value: 'mso', label: '반드시 이 날 시작 (MSO)' },
-  { value: 'mfo', label: '반드시 이 날 종료 (MFO)' },
+  { value: 'mso',  label: '반드시 이 날 시작 (MSO)' },
+  { value: 'mfo',  label: '반드시 이 날 종료 (MFO)' },
 ];
+
+/** Normalise any common date string to YYYY-MM-DD, or return null. */
+function normalizeDate(raw: string): string | null {
+  const s = raw.trim().replace(/[./]/g, '-');               // . and / → -
+  const compact = s.replace(/-/g, '');                       // strip hyphens for digit-only check
+  if (/^\d{8}$/.test(compact)) {
+    return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return null;
+}
 
 /** Full task editor for fields not surfaced in the grid. */
 export function TaskInspector() {
@@ -23,46 +36,57 @@ export function TaskInspector() {
   const task = useProjectStore((s) =>
     s.derived.project.tasks.find((t) => t.id === s.inspectingTaskId),
   );
-  const resources = useProjectStore((s) => s.derived.project.resources);
-  const schedule = useProjectStore((s) =>
+  const resources  = useProjectStore((s) => s.derived.project.resources);
+  const schedule   = useProjectStore((s) =>
     s.inspectingTaskId ? s.derived.schedules.get(s.inspectingTaskId) : undefined,
   );
-  const updateTask = useProjectStore((s) => s.updateTask);
+  const updateTask  = useProjectStore((s) => s.updateTask);
   const setInspecting = useProjectStore((s) => s.setInspecting);
 
   const [startDraft, setStartDraft] = useState(task?.start ?? '');
   const [endDraft,   setEndDraft]   = useState(task?.end   ?? '');
 
-  // Keep drafts in sync when the task changes from outside (undo/redo, etc.)
+  const startPickerRef = useRef<HTMLInputElement>(null);
+  const endPickerRef   = useRef<HTMLInputElement>(null);
+
   useEffect(() => { if (task) setStartDraft(task.start); }, [task?.start]);
-  useEffect(() => { if (task) setEndDraft(task.end); },   [task?.end]);
+  useEffect(() => { if (task) setEndDraft(task.end);   }, [task?.end]);
 
   if (!inspectingTaskId || !task) return null;
 
   const commitDate = (field: 'start' | 'end', raw: string) => {
-    const clean = raw.trim().replace(/\//g, '-');
-    const normalized = /^\d{8}$/.test(clean)
-      ? `${clean.slice(0, 4)}-${clean.slice(4, 6)}-${clean.slice(6, 8)}`
-      : clean;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-      updateTask(task.id, { [field]: normalized });
-    } else {
-      // Revert draft to last valid value
+    const normalized = normalizeDate(raw);
+    if (!normalized) {
       if (field === 'start') setStartDraft(task.start);
       else setEndDraft(task.end);
+      return;
+    }
+
+    if (field === 'start') {
+      if (normalized >= task.end) {
+        // Auto-advance end to start + 1 day
+        const newEnd = addDaysISO(normalized, 1);
+        updateTask(task.id, { start: normalized, end: newEnd });
+        setEndDraft(newEnd);
+      } else {
+        updateTask(task.id, { start: normalized });
+      }
+    } else {
+      updateTask(task.id, { end: normalized });
     }
   };
 
   const toggleAssignee = (id: string) => {
     const set = new Set(task.assigneeIds);
-    if (set.has(id)) set.delete(id);
-    else set.add(id);
+    if (set.has(id)) set.delete(id); else set.add(id);
     updateTask(task.id, { assigneeIds: [...set] });
   };
 
   return (
-    <Modal open title="작업 상세" width={520} onClose={() => setInspecting(null)}>
+    <Modal open title="작업 상세" width={540} onClose={() => setInspecting(null)}>
       <div className="space-y-4 text-sm text-content">
+
+        {/* 작업명 */}
         <Field label="작업명">
           <input
             value={task.name}
@@ -71,59 +95,153 @@ export function TaskInspector() {
           />
         </Field>
 
+        {/* 날짜 */}
         <div className="grid grid-cols-2 gap-3">
           <Field label="시작일">
-            <input
-              type="text"
-              placeholder="YYYY-MM-DD 또는 YYYYMMDD"
-              inputMode="numeric"
-              value={startDraft}
-              onChange={(e) => setStartDraft(e.target.value)}
-              onBlur={(e) => commitDate('start', e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') commitDate('start', startDraft); }}
-              className="input"
-            />
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                placeholder="YYYY-MM-DD"
+                inputMode="numeric"
+                value={startDraft}
+                onChange={(e) => setStartDraft(e.target.value)}
+                onBlur={(e) => commitDate('start', e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') commitDate('start', startDraft); }}
+                className="input flex-1 min-w-0"
+              />
+              {/* hidden native date picker */}
+              <input
+                ref={startPickerRef}
+                type="date"
+                tabIndex={-1}
+                className="sr-only"
+                value={startDraft}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setStartDraft(e.target.value);
+                  commitDate('start', e.target.value);
+                }}
+              />
+              <button
+                type="button"
+                title="달력에서 선택"
+                onClick={() => startPickerRef.current?.showPicker?.()}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border bg-surface-2 text-content-muted hover:bg-surface-3 hover:text-content"
+              >
+                <CalendarDays size={14} />
+              </button>
+            </div>
           </Field>
           <Field label="종료일">
-            <input
-              type="text"
-              placeholder="YYYY-MM-DD 또는 YYYYMMDD"
-              inputMode="numeric"
-              value={endDraft}
-              onChange={(e) => setEndDraft(e.target.value)}
-              onBlur={(e) => commitDate('end', e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') commitDate('end', endDraft); }}
-              className="input"
-            />
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                placeholder="YYYY-MM-DD"
+                inputMode="numeric"
+                value={endDraft}
+                onChange={(e) => setEndDraft(e.target.value)}
+                onBlur={(e) => commitDate('end', e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') commitDate('end', endDraft); }}
+                className="input flex-1 min-w-0"
+              />
+              <input
+                ref={endPickerRef}
+                type="date"
+                tabIndex={-1}
+                className="sr-only"
+                value={endDraft}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setEndDraft(e.target.value);
+                  commitDate('end', e.target.value);
+                }}
+              />
+              <button
+                type="button"
+                title="달력에서 선택"
+                onClick={() => endPickerRef.current?.showPicker?.()}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border bg-surface-2 text-content-muted hover:bg-surface-3 hover:text-content"
+              >
+                <CalendarDays size={14} />
+              </button>
+            </div>
           </Field>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label={`진척률 (${task.progress}%)`}>
+        {/* 진척률 */}
+        <Field label="진척률">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-label="1% 감소"
+              onClick={() => updateTask(task.id, { progress: Math.max(0, task.progress - 1) })}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border bg-surface-2 text-content-muted hover:bg-surface-3 hover:text-content select-none"
+            >
+              −
+            </button>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={task.progress}
+              onChange={(e) => {
+                const v = Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0));
+                updateTask(task.id, { progress: v });
+              }}
+              className="input w-16 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            />
+            <button
+              type="button"
+              aria-label="1% 증가"
+              onClick={() => updateTask(task.id, { progress: Math.min(100, task.progress + 1) })}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border bg-surface-2 text-content-muted hover:bg-surface-3 hover:text-content select-none"
+            >
+              +
+            </button>
             <input
               type="range"
               min={0}
               max={100}
               value={task.progress}
               onChange={(e) => updateTask(task.id, { progress: Number(e.target.value) })}
-              className="w-full accent-[rgb(var(--color-accent))]"
+              className="flex-1 accent-[rgb(var(--color-accent))]"
             />
-          </Field>
-          <Field label="우선순위">
-            <select
-              value={task.priority}
-              onChange={(e) => updateTask(task.id, { priority: e.target.value as Priority })}
-              className="input"
-            >
-              {PRIORITIES.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
+            <span className="w-9 shrink-0 text-right text-2xs text-content-muted">
+              {task.progress}%
+            </span>
+          </div>
+        </Field>
 
+        {/* 우선순위 라디오 */}
+        <Field label="우선순위">
+          <div className="flex gap-2">
+            {PRIORITIES.map((p) => (
+              <label
+                key={p.value}
+                className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-2xs font-medium transition-all ${
+                  task.priority === p.value
+                    ? `${p.color} border-current`
+                    : 'border-border text-content-muted hover:border-border/80 hover:text-content'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name={`priority-${task.id}`}
+                  value={p.value}
+                  checked={task.priority === p.value}
+                  onChange={() => updateTask(task.id, { priority: p.value as Priority })}
+                  className="hidden"
+                />
+                {task.priority === p.value && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                )}
+                {p.label}
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        {/* 막대 색상 */}
         <Field label="막대 색상">
           <div className="flex items-center gap-2">
             <input
@@ -148,6 +266,7 @@ export function TaskInspector() {
           </div>
         </Field>
 
+        {/* 제약 조건 */}
         <Field label="제약 조건">
           <div className="flex gap-2">
             <select
@@ -156,9 +275,7 @@ export function TaskInspector() {
               className="input flex-1"
             >
               {CONSTRAINTS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
+                <option key={c.value} value={c.value}>{c.label}</option>
               ))}
             </select>
             {task.constraint !== 'asap' && (
@@ -174,6 +291,7 @@ export function TaskInspector() {
           </div>
         </Field>
 
+        {/* 담당자 */}
         <Field label="담당자">
           <div className="flex flex-wrap gap-2">
             {resources.map((r) => (
@@ -195,10 +313,13 @@ export function TaskInspector() {
                 {r.name}
               </label>
             ))}
-            {resources.length === 0 && <span className="text-2xs text-content-muted">담당자가 없습니다.</span>}
+            {resources.length === 0 && (
+              <span className="text-2xs text-content-muted">담당자가 없습니다.</span>
+            )}
           </div>
         </Field>
 
+        {/* 체크박스들 */}
         <div className="flex gap-4">
           <label className="flex items-center gap-2 text-xs">
             <input
@@ -209,7 +330,10 @@ export function TaskInspector() {
             />
             마일스톤
           </label>
-          <label className="flex items-center gap-2 text-xs" title="체크 시 의존성 무시하고 날짜 고정 / 해제 시 의존성에 따라 자동 이동">
+          <label
+            className="flex items-center gap-2 text-xs"
+            title="체크 시 의존성 무시하고 날짜 고정 / 해제 시 의존성에 따라 자동 이동"
+          >
             <input
               type="checkbox"
               checked={task.manuallyScheduled}
@@ -217,8 +341,11 @@ export function TaskInspector() {
                 if (e.target.checked) {
                   updateTask(task.id, { manuallyScheduled: true });
                 } else {
-                  // Clear the pin and reset constraint so the scheduler takes over.
-                  updateTask(task.id, { manuallyScheduled: false, constraint: 'asap', constraintDate: null });
+                  updateTask(task.id, {
+                    manuallyScheduled: false,
+                    constraint: 'asap',
+                    constraintDate: null,
+                  });
                 }
               }}
               className="h-4 w-4 accent-[rgb(var(--color-accent))]"
@@ -227,15 +354,18 @@ export function TaskInspector() {
           </label>
         </div>
 
+        {/* 메모 — 최소 5줄, 길면 스크롤 */}
         <Field label="메모">
           <textarea
             value={task.notes}
             onChange={(e) => updateTask(task.id, { notes: e.target.value })}
-            rows={3}
-            className="input resize-none"
+            rows={5}
+            placeholder="메모를 입력하면 차트 막대 위에 마우스를 올렸을 때 표시됩니다."
+            className="input min-h-[7rem] max-h-48 resize-y overflow-y-auto"
           />
         </Field>
 
+        {/* 스케줄 정보 */}
         {schedule && (
           <div className="grid grid-cols-3 gap-2 rounded border border-border bg-surface-2 p-2 text-center text-2xs text-content-muted">
             <div>

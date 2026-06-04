@@ -74,8 +74,9 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const clearUserScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // DOM refs for imperative tooltip + toast (avoids React state churning).
-  const tooltipRef = useRef<HTMLDivElement>(null);
-  const toastRef = useRef<HTMLDivElement>(null);
+  const tooltipRef    = useRef<HTMLDivElement>(null);
+  const barTipRef     = useRef<HTMLDivElement>(null);  // hover memo tooltip
+  const toastRef      = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const derived = useProjectStore((s) => s.derived);
@@ -402,10 +403,36 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     if (dragRef.current.mode) return; // cursor managed by active drag
     if (spaceHeldRef.current || panModeRef.current) { setDomCursor('grab'); return; }
     const { bar, edge } = hitTest(e.clientX, e.clientY);
+
+    // Bar hover memo tooltip
+    const tip = barTipRef.current;
+    if (tip) {
+      if (bar) {
+        const task = useProjectStore.getState().derived.project.tasks.find((t) => t.id === bar.taskId);
+        const notes = task?.notes?.trim();
+        if (notes) {
+          const scroller = scrollerRef.current!;
+          const rect = scroller.getBoundingClientRect();
+          const cx = e.clientX - rect.left;
+          const cy = e.clientY - rect.top;
+          // Flip left when near right edge
+          const tipW = Math.min(300, tip.scrollWidth || 240);
+          const left = cx + tipW + 12 > scroller.clientWidth ? cx - tipW - 8 : cx + 12;
+          tip.style.left = `${Math.max(4, left)}px`;
+          tip.style.top  = `${Math.max(4, cy - 8)}px`;
+          tip.style.display = 'block';
+          tip.textContent = notes;
+        } else {
+          tip.style.display = 'none';
+        }
+      } else {
+        tip.style.display = 'none';
+      }
+    }
+
     if (!bar) {
       setDomCursor('default');
     } else if (bar.isSummary) {
-      // Summary bars are read-only — their dates roll up from children.
       setDomCursor('default');
     } else if (edge === 'resize-start' || edge === 'resize-end') {
       setDomCursor('ew-resize');
@@ -595,6 +622,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         onScroll={handleScroll}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMoveHover}
+        onMouseLeave={() => { if (barTipRef.current) barTipRef.current.style.display = 'none'; }}
         onDoubleClick={onDoubleClick}
         role="application"
         aria-label="간트 타임라인"
@@ -612,6 +640,13 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
             연결할 대상 작업으로 드래그하세요 (Alt+드래그)
           </div>
         )}
+
+        {/* Bar hover memo tooltip */}
+        <div
+          ref={barTipRef}
+          className="pointer-events-none absolute z-20 rounded-md border border-border bg-surface-2 px-2.5 py-2 text-xs shadow-lg text-content"
+          style={{ display: 'none', maxWidth: 300, whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5 }}
+        />
 
         {/* Drag date tooltip — updated via imperative DOM (no re-render) */}
         <div
