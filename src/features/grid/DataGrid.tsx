@@ -130,8 +130,6 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const toggleCollapse     = useProjectStore((s) => s.toggleCollapse);
   const expandAll          = useProjectStore((s) => s.expandAll);
   const collapseAll        = useProjectStore((s) => s.collapseAll);
-  const indentTask         = useProjectStore((s) => s.indentTask);
-  const outdentTask        = useProjectStore((s) => s.outdentTask);
   const importTsvTasks     = useProjectStore((s) => s.importTsvTasks);
   const insertTsvTasks     = useProjectStore((s) => s.insertTsvTasks);
   const updateTasksFromTsv = useProjectStore((s) => s.updateTasksFromTsv);
@@ -332,8 +330,6 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   }, [setSelectedTaskIds, selectTask]);
 
   const handleToggle  = useCallback((taskId: string) => toggleCollapse(taskId), [toggleCollapse]);
-  const handleIndent  = useCallback((taskId: string) => indentTask(taskId),     [indentTask]);
-  const handleOutdent = useCallback((taskId: string) => outdentTask(taskId),     [outdentTask]);
 
   const handleDragStart = useCallback((taskId: string) => { dragIdRef.current = taskId; }, []);
   const handleDragEnd   = useCallback(() => { dragIdRef.current = null; setDropTargetId(null); }, []);
@@ -374,6 +370,17 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
             setSelectedCell(null);
             setRangeAnchor(null);
           }
+          return;
+        }
+
+        // Tab: indent/outdent the selectedCell row, not whatever row has DOM focus.
+        // stopImmediatePropagation prevents GridRow's React handler from also firing.
+        if (e.key === 'Tab' && cell) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          const store = useProjectStore.getState();
+          if (e.shiftKey) store.outdentTask(cell.taskId);
+          else store.indentTask(cell.taskId);
           return;
         }
 
@@ -667,8 +674,6 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
                 onCellSelect={handleCellSelect}
                 onSelect={handleRowSelect}
                 onToggle={handleToggle}
-                onIndent={handleIndent}
-                onOutdent={handleOutdent}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 onDragOver={handleDragOver}
@@ -912,8 +917,6 @@ interface GridRowProps {
   onSelect: (taskId: string, isCtrl: boolean, isShift: boolean) => void;
   onCellSelect: (taskId: string, colKey: string, isShift: boolean) => void;
   onToggle: (taskId: string) => void;
-  onIndent: (taskId: string) => void;
-  onOutdent: (taskId: string) => void;
   onDragStart: (taskId: string) => void;
   onDragEnd: () => void;
   onDragOver: (taskId: string) => void;
@@ -936,8 +939,6 @@ const GridRow = memo(function GridRow({
   onSelect,
   onCellSelect,
   onToggle,
-  onIndent,
-  onOutdent,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -947,13 +948,6 @@ const GridRow = memo(function GridRow({
   const { task, depth, hasChildren, wbs } = row;
   const project    = useProjectStore((s) => s.derived.project);
   const taskGroups = project.viewGroups.filter((g) => g.taskIds.includes(task.id));
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      if (e.shiftKey) onOutdent(task.id); else onIndent(task.id);
-    }
-  };
 
   return (
     <div
@@ -966,7 +960,6 @@ const GridRow = memo(function GridRow({
       style={{ top, height: ROW_HEIGHT }}
       draggable
       onMouseDown={(e) => onSelect(task.id, e.ctrlKey || e.metaKey, e.shiftKey)}
-      onKeyDown={handleKeyDown}
       onDragStart={(e) => { e.stopPropagation(); onDragStart(task.id); }}
       onDragEnd={onDragEnd}
       onDragOver={(e) => { e.preventDefault(); onDragOver(task.id); }}
