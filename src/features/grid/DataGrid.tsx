@@ -137,6 +137,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const updateTasksFromTsv = useProjectStore((s) => s.updateTasksFromTsv);
   const batchUpdateTasks   = useProjectStore((s) => s.batchUpdateTasks);
   const moveTaskBefore     = useProjectStore((s) => s.moveTaskBefore);
+  const addTask            = useProjectStore((s) => s.addTask);
+  const addTaskBefore      = useProjectStore((s) => s.addTaskBefore);
   const sortChildrenByStart = useProjectStore((s) => s.sortChildrenByStart);
   const scrollGanttToDate  = useProjectStore((s) => s.scrollGanttToDate);
   const addTasksToGroup    = useProjectStore((s) => s.addTasksToGroup);
@@ -148,6 +150,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const [filter, setFilter]         = useState('');
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [contextMenu, setContextMenu]   = useState<{ x: number; y: number; taskId: string } | null>(null);
+  const [groupSubmenuOpen, setGroupSubmenuOpen] = useState(false);
   /** Active cell (moving end of the selection range). */
   const [selectedCell, setSelectedCell] = useState<CellPos | null>(null);
   /** Fixed anchor of the range (Shift+click/Shift+Arrow keeps this while moving active cell). */
@@ -212,7 +215,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   // --- close context menu on outside click ---
   useEffect(() => {
     if (!contextMenu) return;
-    const close = () => setContextMenu(null);
+    const close = () => { setContextMenu(null); setGroupSubmenuOpen(false); };
     window.addEventListener('mousedown', close);
     return () => window.removeEventListener('mousedown', close);
   }, [contextMenu]);
@@ -677,110 +680,214 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         </div>
       </div>
 
-      {/* Context menu (view group assignment) */}
+      {/* Context menu */}
       {contextMenu && createPortal(
-        <div
-          style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 9999 }}
-          className="min-w-[160px] rounded-md border border-border bg-surface-2 py-1 shadow-xl text-xs"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          {/* Sort / scroll actions */}
-          {(() => {
-            const menuRow = rows.find((r) => r.task.id === contextMenu.taskId);
-            return (
-              <>
-                <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wider text-content-muted">정렬 / 이동</div>
-                <button
-                  className="w-full px-3 py-1.5 text-left hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!menuRow?.hasChildren}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => {
-                    sortChildrenByStart(contextMenu.taskId);
-                    setContextMenu(null);
-                  }}
-                  title={menuRow?.hasChildren ? undefined : '하위 일정이 없습니다'}
-                >
-                  하위 일정 시작일 순 정렬
-                </button>
-                <button
-                  className="w-full border-b border-border px-3 py-1.5 text-left hover:bg-surface-3"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => {
-                    if (menuRow) scrollGanttToDate(menuRow.task.start);
-                    setContextMenu(null);
-                  }}
-                >
-                  차트에서 시작일로 이동
-                </button>
-              </>
-            );
-          })()}
-          {/* Paste-as-new-rows actions */}
-          <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wider text-content-muted">붙여넣기</div>
-          <button
-            className="w-full px-3 py-1.5 text-left hover:bg-surface-3"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => {
-              const id = contextMenu.taskId;
-              setContextMenu(null);
-              void readClipboardText().then((text) => {
-                if (text.trim()) insertTsvTasksRef.current(id, text);
-              });
-            }}
-          >
-            이 행 아래 붙여넣기 <span className="text-content-muted">(행 삽입)</span>
-          </button>
-          <button
-            className="w-full border-b border-border px-3 py-1.5 text-left hover:bg-surface-3"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => {
-              setContextMenu(null);
-              void readClipboardText().then((text) => {
-                if (text.trim()) insertTsvTasksRef.current(null, text);
-              });
-            }}
-          >
-            맨 아래에 붙여넣기
-          </button>
-          {viewGroups.length === 0 ? (
-            <div className="px-3 py-2 text-content-muted">보기 그룹이 없습니다</div>
-          ) : (
-            <>
-              <div className="px-3 py-1 text-2xs font-semibold uppercase tracking-wider text-content-muted">보기 그룹</div>
-              {viewGroups.map((g) => {
-                const inGroup = g.taskIds.includes(contextMenu.taskId);
-                return (
-                  <label
-                    key={g.id}
-                    className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-surface-3"
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={inGroup}
-                      onChange={() => {
-                        if (inGroup) removeTasksFromGroup(g.id, [contextMenu.taskId]);
-                        else addTasksToGroup(g.id, [contextMenu.taskId]);
-                      }}
-                      className="h-3 w-3 accent-accent"
-                    />
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: g.color }} />
-                    {g.name}
-                  </label>
-                );
-              })}
-            </>
-          )}
-          <button
-            className="mt-1 w-full border-t border-border px-3 py-1.5 text-left text-content-muted hover:bg-surface-3"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => setContextMenu(null)}
-          >
-            닫기
-          </button>
-        </div>,
+        <ContextMenu
+          contextMenu={contextMenu}
+          rows={rows}
+          selected={selected}
+          viewGroups={viewGroups}
+          groupSubmenuOpen={groupSubmenuOpen}
+          setGroupSubmenuOpen={setGroupSubmenuOpen}
+          onClose={() => { setContextMenu(null); setGroupSubmenuOpen(false); }}
+          onAddBefore={(id) => addTaskBefore(id)}
+          onAddAfter={(id) => addTask(id)}
+          onToggleCollapse={(id) => toggleCollapse(id)}
+          onSortChildren={(id) => sortChildrenByStart(id)}
+          onScrollToDate={(date) => scrollGanttToDate(date)}
+          onCopyRows={(ids) => {
+            const curRows = rowsRef.current;
+            const selRows = curRows.filter((r) => ids.has(r.task.id));
+            if (selRows.length === 0) return;
+            const header = ['작업명', '시작', '종료', '기간(일)', '진척(%)', '우선순위'].join('\t');
+            const lines = selRows.map((r) => {
+              const t = r.task;
+              return [t.name, t.start, t.end, t.durationDays, t.progress,
+                PRIORITY_KO[t.priority] ?? t.priority].join('\t');
+            });
+            void writeClipboardText([header, ...lines].join('\n'));
+          }}
+          onPasteAfter={(id) => {
+            void readClipboardText().then((text) => {
+              if (text.trim()) insertTsvTasksRef.current(id, text);
+            });
+          }}
+          onPasteEnd={() => {
+            void readClipboardText().then((text) => {
+              if (text.trim()) insertTsvTasksRef.current(null, text);
+            });
+          }}
+          onGroupToggle={(groupId, inGroup) => {
+            if (inGroup) removeTasksFromGroup(groupId, [contextMenu.taskId]);
+            else addTasksToGroup(groupId, [contextMenu.taskId]);
+          }}
+        />,
         document.body,
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ContextMenu
+// ---------------------------------------------------------------------------
+
+interface ContextMenuProps {
+  contextMenu: { x: number; y: number; taskId: string };
+  rows: VisibleRow[];
+  selected: Set<string>;
+  viewGroups: { id: string; name: string; color: string; taskIds: string[] }[];
+  groupSubmenuOpen: boolean;
+  setGroupSubmenuOpen: (v: boolean) => void;
+  onClose: () => void;
+  onAddBefore: (id: string) => void;
+  onAddAfter: (id: string) => void;
+  onToggleCollapse: (id: string) => void;
+  onSortChildren: (id: string) => void;
+  onScrollToDate: (date: string) => void;
+  onCopyRows: (ids: Set<string>) => void;
+  onPasteAfter: (id: string) => void;
+  onPasteEnd: () => void;
+  onGroupToggle: (groupId: string, inGroup: boolean) => void;
+}
+
+function ContextMenu({
+  contextMenu, rows, selected, viewGroups,
+  groupSubmenuOpen, setGroupSubmenuOpen, onClose,
+  onAddBefore, onAddAfter, onToggleCollapse,
+  onSortChildren, onScrollToDate, onCopyRows,
+  onPasteAfter, onPasteEnd, onGroupToggle,
+}: ContextMenuProps) {
+  const menuRow = rows.find((r) => r.task.id === contextMenu.taskId);
+  const taskId  = contextMenu.taskId;
+  const isCollapsed = menuRow?.task.collapsed ?? false;
+
+  // Decide which ids to copy: if right-clicked task is in the selection, copy
+  // the whole selection; otherwise copy only the right-clicked task.
+  const copyIds = selected.has(taskId) && selected.size > 1 ? selected : new Set([taskId]);
+
+  const item = (label: React.ReactNode, onClick: () => void, disabled = false) => (
+    <button
+      className="w-full px-3 py-1.5 text-left hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-40"
+      disabled={disabled}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+
+  const section = (label: string) => (
+    <div className="px-3 pb-0.5 pt-1.5 text-2xs font-semibold uppercase tracking-wider text-content-muted">
+      {label}
+    </div>
+  );
+
+  const divider = () => <div className="my-1 border-t border-border" />;
+
+  return (
+    <div
+      style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 9999 }}
+      className="min-w-[180px] rounded-md border border-border bg-surface-2 py-1 shadow-xl text-xs"
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {/* 1. 하위 접기/펼치기 */}
+      {menuRow?.hasChildren && (
+        <>
+          {section('하위 일정')}
+          {item(
+            isCollapsed ? '하위 일정 펼치기' : '하위 일정 접기',
+            () => { onToggleCollapse(taskId); onClose(); },
+          )}
+          {item(
+            '하위 일정 시작일 순 정렬',
+            () => { onSortChildren(taskId); onClose(); },
+          )}
+          {divider()}
+        </>
+      )}
+
+      {/* 2. 위/아래 신규 행 추가 */}
+      {section('행 추가')}
+      {item('이 행 위에 추가', () => { onAddBefore(taskId); onClose(); })}
+      {item('이 행 아래 추가', () => { onAddAfter(taskId); onClose(); })}
+
+      {divider()}
+
+      {/* 3. 차트 이동 */}
+      {section('이동')}
+      {item('차트에서 시작일로 이동', () => { if (menuRow) onScrollToDate(menuRow.task.start); onClose(); })}
+
+      {divider()}
+
+      {/* 4. 복사 */}
+      {section('클립보드')}
+      {item(
+        copyIds.size > 1 ? `선택 행 복사 (${copyIds.size}개)` : '이 행 복사',
+        () => { onCopyRows(copyIds); onClose(); },
+      )}
+      {item(
+        '이 행 아래 붙여넣기 (행 삽입)',
+        () => { onPasteAfter(taskId); onClose(); },
+      )}
+      {item('맨 아래에 붙여넣기', () => { onPasteEnd(); onClose(); })}
+
+      {divider()}
+
+      {/* 5. 보기 그룹 (서브메뉴) */}
+      <div className="relative">
+        <button
+          className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-surface-3"
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseEnter={() => setGroupSubmenuOpen(true)}
+          onMouseLeave={() => setGroupSubmenuOpen(false)}
+          onClick={() => setGroupSubmenuOpen(!groupSubmenuOpen)}
+        >
+          <span>보기 그룹</span>
+          <ChevronRight size={12} className="text-content-muted" />
+        </button>
+        {groupSubmenuOpen && (
+          <div
+            className="absolute left-full top-0 min-w-[160px] rounded-md border border-border bg-surface-2 py-1 shadow-xl"
+            onMouseEnter={() => setGroupSubmenuOpen(true)}
+            onMouseLeave={() => setGroupSubmenuOpen(false)}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {viewGroups.length === 0 ? (
+              <div className="px-3 py-2 text-content-muted">보기 그룹이 없습니다</div>
+            ) : viewGroups.map((g) => {
+              const inGroup = g.taskIds.includes(taskId);
+              return (
+                <label
+                  key={g.id}
+                  className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-surface-3"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={inGroup}
+                    onChange={() => onGroupToggle(g.id, inGroup)}
+                    className="h-3 w-3 accent-accent"
+                  />
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: g.color }} />
+                  {g.name}
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {divider()}
+
+      {/* 닫기 */}
+      <button
+        className="w-full px-3 py-1 text-left text-content-muted hover:bg-surface-3"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={onClose}
+      >
+        닫기
+      </button>
     </div>
   );
 }

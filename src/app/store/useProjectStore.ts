@@ -90,6 +90,8 @@ interface ProjectStore {
   // --- task mutations ---
   updateTask: (id: TaskId, patch: Partial<Task>) => void;
   addTask: (afterId?: TaskId) => void;
+  /** Insert a new task immediately *before* the given sibling. */
+  addTaskBefore: (beforeId: TaskId) => void;
   deleteSelected: () => void;
   hardDeleteSelected: () => void;
   uncancelSelected: () => void;
@@ -365,6 +367,26 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         // Editing dates directly implies a manual pin unless cleared.
         if (patch.start || patch.end) t.manuallyScheduled = true;
       });
+    },
+
+    addTaskBefore(beforeId) {
+      const id = nanoid(10);
+      commit((d) => {
+        const ref = d.tasks.find((x) => x.id === beforeId);
+        if (!ref) return;
+        const parentId = ref.parentId;
+        const order = ref.order; // insert AT this slot, push ref down
+        for (const t of d.tasks) {
+          if (t.parentId === parentId && t.order >= order) t.order += 1;
+        }
+        d.tasks.push({
+          id, parentId, name: '새 작업', start: d.startDate, end: d.startDate,
+          durationDays: 1, progress: 0, priority: 'medium', assigneeIds: [], notes: '',
+          isMilestone: false, collapsed: false, constraint: 'asap', constraintDate: null,
+          manuallyScheduled: false, order, color: null, cancelled: false,
+        });
+      });
+      set({ selectedTaskIds: new Set([id]), editingTaskId: id });
     },
 
     addTask(afterId) {
