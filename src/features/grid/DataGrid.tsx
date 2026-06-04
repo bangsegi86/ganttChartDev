@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, Lock } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
@@ -818,9 +818,25 @@ function ContextMenu({
 
   const divider = () => <div className="my-1 border-t border-border" />;
 
+  // Adjust position so the menu never gets clipped by the viewport edge.
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: contextMenu.y, left: contextMenu.x });
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const MARGIN = 6; // px gap from viewport edge
+    const top  = contextMenu.y + height + MARGIN > vh ? Math.max(MARGIN, contextMenu.y - height) : contextMenu.y;
+    const left = contextMenu.x + width  + MARGIN > vw ? Math.max(MARGIN, contextMenu.x - width)  : contextMenu.x;
+    setPos({ top, left });
+  }, [contextMenu.x, contextMenu.y]);
+
   return (
     <div
-      style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, zIndex: 9999 }}
+      ref={menuRef}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
       className="min-w-[180px] rounded-md border border-border bg-surface-2 py-1 shadow-xl text-xs"
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -906,9 +922,13 @@ function ContextMenu({
           <span>보기 그룹</span>
           <ChevronRight size={12} className="text-content-muted" />
         </button>
-        {groupSubmenuOpen && (
+        {groupSubmenuOpen && (() => {
+          const SUBMENU_W = 170;
+          const openRight = pos.left + (menuRef.current?.offsetWidth ?? 180) + SUBMENU_W + 6 <= window.innerWidth;
+          return (
           <div
-            className="absolute left-full top-0 min-w-[160px] rounded-md border border-border bg-surface-2 py-1 shadow-xl"
+            className="absolute top-0 min-w-[160px] rounded-md border border-border bg-surface-2 py-1 shadow-xl"
+            style={{ [openRight ? 'left' : 'right']: '100%' }}
             onMouseEnter={() => setGroupSubmenuOpen(true)}
             onMouseLeave={() => setGroupSubmenuOpen(false)}
             onMouseDown={(e) => e.stopPropagation()}
@@ -935,7 +955,8 @@ function ContextMenu({
               );
             })}
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {divider()}
