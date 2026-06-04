@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Diamond, GripVertical, Lock } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, Lock } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -128,6 +128,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const selectTask         = useProjectStore((s) => s.selectTask);
   const setSelectedTaskIds = useProjectStore((s) => s.setSelectedTaskIds);
   const toggleCollapse     = useProjectStore((s) => s.toggleCollapse);
+  const expandAll          = useProjectStore((s) => s.expandAll);
+  const collapseAll        = useProjectStore((s) => s.collapseAll);
   const indentTask         = useProjectStore((s) => s.indentTask);
   const outdentTask        = useProjectStore((s) => s.outdentTask);
   const importTsvTasks     = useProjectStore((s) => s.importTsvTasks);
@@ -177,6 +179,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   // --- derived rows ---
   const visibleTasks = useVisibleTasks();
   const allRows = useMemo(() => buildVisibleRows(visibleTasks), [visibleTasks]);
+  const hasParents  = useMemo(() => allRows.some((r) => r.hasChildren), [allRows]);
   const rows = useMemo(() => {
     if (!filter.trim()) return allRows;
     const q = filter.trim().toLowerCase();
@@ -570,15 +573,33 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
       className="flex h-full flex-col border-r border-border bg-surface outline-none"
       style={{ width }}
     >
-      {/* Filter */}
-      <div className="flex items-center gap-2 border-b border-border px-2" style={{ height: 28 }}>
+      {/* Filter + expand/collapse all */}
+      <div className="flex items-center gap-1 border-b border-border px-2" style={{ height: 28 }}>
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder="작업 검색…"
-          className="h-6 w-full rounded bg-surface-2 px-2 text-xs text-content outline-none placeholder:text-content-muted"
+          className="h-6 min-w-0 flex-1 rounded bg-surface-2 px-2 text-xs text-content outline-none placeholder:text-content-muted"
           aria-label="작업 검색"
         />
+        <button
+          onClick={expandAll}
+          disabled={!hasParents}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-content-muted transition-colors hover:bg-surface-2 hover:text-content disabled:opacity-30"
+          title="전체 펼치기"
+          aria-label="전체 펼치기"
+        >
+          <ChevronsDown size={13} />
+        </button>
+        <button
+          onClick={collapseAll}
+          disabled={!hasParents}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-content-muted transition-colors hover:bg-surface-2 hover:text-content disabled:opacity-30"
+          title="전체 접기"
+          aria-label="전체 접기"
+        >
+          <ChevronsUp size={13} />
+        </button>
       </div>
 
       {/* Column headers */}

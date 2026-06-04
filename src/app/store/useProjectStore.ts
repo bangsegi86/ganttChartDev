@@ -89,6 +89,10 @@ interface ProjectStore {
   uncancelSelected: () => void;
   cancelConfirmDelete: () => void;
   toggleCollapse: (id: TaskId) => void;
+  /** Set every parent task's collapsed flag to false. */
+  expandAll: () => void;
+  /** Set every parent task's collapsed flag to true. */
+  collapseAll: () => void;
   indentTask: (id: TaskId) => void;
   outdentTask: (id: TaskId) => void;
   moveTaskBy: (id: TaskId, deltaDays: number) => void;
@@ -451,6 +455,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         const t = d.tasks.find((x) => x.id === id);
         if (t) t.collapsed = !t.collapsed;
       });
+    },
+
+    expandAll() {
+      commit((d) => { for (const t of d.tasks) t.collapsed = false; });
+    },
+
+    collapseAll() {
+      const parentIds = new Set(get().derived.project.tasks.map((t) => t.parentId).filter(Boolean));
+      commit((d) => { for (const t of d.tasks) if (parentIds.has(t.id)) t.collapsed = true; });
     },
 
     indentTask(id) {
