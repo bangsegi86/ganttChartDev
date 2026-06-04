@@ -153,7 +153,7 @@ function drawGridLines(
   }
 }
 
-/** Vertical "today" marker. */
+/** Vertical "today" marker with a small "오늘" label at the top. */
 function drawTodayLine(
   ctx: CanvasRenderingContext2D,
   model: GanttRenderModel,
@@ -163,6 +163,8 @@ function drawTodayLine(
   const { timeline, palette, today } = model;
   if (today < timeline.start || today > timeline.end) return;
   const x = timeline.xFor(today) + timeline.dayWidth / 2 - scrollLeft;
+
+  // Dashed vertical line
   ctx.strokeStyle = palette.today;
   ctx.lineWidth = 2;
   ctx.setLineDash([4, 3]);
@@ -171,6 +173,26 @@ function drawTodayLine(
   ctx.lineTo(x, viewportH);
   ctx.stroke();
   ctx.setLineDash([]);
+
+  // "오늘" label pill at the top of the line
+  const label = '오늘';
+  ctx.font = 'bold 10px sans-serif';
+  const tw = ctx.measureText(label).width;
+  const PAD = 4;
+  const bw = tw + PAD * 2;
+  const bh = 14;
+  const bx = x - bw / 2;
+  const by = 2;
+  ctx.fillStyle = palette.today;
+  ctx.beginPath();
+  ctx.roundRect(bx, by, bw, bh, 3);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, x, by + bh / 2);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
 }
 
 /** User-defined vertical marker lines (e.g. 오픈일, 마감일). */
