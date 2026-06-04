@@ -261,9 +261,9 @@ export function TaskInspector() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block">
+    <div className="block">
       <span className="mb-1 block text-2xs font-semibold text-content-muted">{label}</span>
       {children}
-    </label>
+    </div>
   );
 }
