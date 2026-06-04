@@ -1205,6 +1205,10 @@ function AssigneeCell({ task }: { task: Task }) {
   const resources  = useProjectStore((s) => s.derived.project.resources);
   const updateTask = useProjectStore((s) => s.updateTask);
 
+  const panelRef      = useRef<HTMLDivElement>(null);
+  const triggerRect   = useRef<DOMRect | null>(null);
+  const didAdjust     = useRef(false);
+
   const displayText = task.assigneeIds
     .map((id) => resources.find((r) => r.id === id)?.name)
     .filter(Boolean).join(', ');
@@ -1212,20 +1216,39 @@ function AssigneeCell({ task }: { task: Task }) {
   const openDropdown = (e: React.MouseEvent) => {
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    triggerRect.current = rect;
+    didAdjust.current   = false;
     setPanelPos({ top: rect.bottom + 2, left: rect.left });
     setOpen(true);
   };
 
+  // After the portal renders, measure the panel and flip it if it clips the viewport.
+  useLayoutEffect(() => {
+    if (!open || didAdjust.current) return;
+    const el = panelRef.current;
+    const tr = triggerRect.current;
+    if (!el || !tr) return;
+    didAdjust.current = true;
+    const { height, width } = el.getBoundingClientRect();
+    const MARGIN = 6;
+    const top  = tr.bottom + 2 + height + MARGIN > window.innerHeight
+      ? Math.max(MARGIN, tr.top - height - 2)
+      : tr.bottom + 2;
+    const left = tr.left + width + MARGIN > window.innerWidth
+      ? Math.max(MARGIN, tr.right - width)
+      : tr.left;
+    if (top !== panelPos.top || left !== panelPos.left) setPanelPos({ top, left });
+  }, [open, panelPos.top, panelPos.left]);
+
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => {
-      const panel = document.getElementById('assignee-panel-' + task.id);
-      if (panel?.contains(e.target as Node)) return;
+      if (panelRef.current?.contains(e.target as Node)) return;
       setOpen(false);
     };
     const tid = setTimeout(() => window.addEventListener('mousedown', close), 50);
     return () => { clearTimeout(tid); window.removeEventListener('mousedown', close); };
-  }, [open, task.id]);
+  }, [open]);
 
   const toggle = (resourceId: string) => {
     const cur = new Set(task.assigneeIds);
@@ -1244,7 +1267,7 @@ function AssigneeCell({ task }: { task: Task }) {
       </span>
       {open && createPortal(
         <div
-          id={'assignee-panel-' + task.id}
+          ref={panelRef}
           style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, zIndex: 9999 }}
           className="min-w-[150px] rounded-md border border-border bg-surface-2 py-1 shadow-xl text-xs"
           onMouseDown={(e) => e.stopPropagation()}
