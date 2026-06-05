@@ -163,11 +163,21 @@ body{background:var(--bg)}
 #chart-scroll{position:absolute;inset:0;overflow:auto}
 #chart-spacer{position:relative}
 #body-canvas{position:absolute;top:0;left:0;pointer-events:none}
-/* scrollbars */
-::-webkit-scrollbar{width:6px;height:6px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-::-webkit-scrollbar-thumb:hover{background:var(--text-muted)}
+/* scrollbars — always visible, thick enough to grab */
+#chart-scroll::-webkit-scrollbar,
+#grid-body::-webkit-scrollbar{width:10px;height:10px}
+#chart-scroll::-webkit-scrollbar-track,
+#grid-body::-webkit-scrollbar-track{background:var(--surface2)}
+#chart-scroll::-webkit-scrollbar-thumb,
+#grid-body::-webkit-scrollbar-thumb{background:var(--text-muted);border-radius:5px;border:2px solid var(--surface2)}
+#chart-scroll::-webkit-scrollbar-thumb:hover,
+#grid-body::-webkit-scrollbar-thumb:hover{background:var(--text)}
+#chart-scroll::-webkit-scrollbar-corner{background:var(--surface2)}
+/* pan mode cursor overrides */
+#chart-scroll.pan{cursor:grab}
+#chart-scroll.panning{cursor:grabbing;user-select:none}
+/* active toolbar button */
+.btn.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -185,6 +195,8 @@ body{background:var(--bg)}
     <button class="btn" id="btn-today">오늘</button>
     <div class="sep"></div>
     <button class="btn" id="btn-theme">◑</button>
+    <div class="sep"></div>
+    <button class="btn" id="btn-pan" title="손바닥(드래그 이동) 켜기/끄기 — 스페이스바 일시 사용 가능">🤚</button>
     <span style="margin-left:auto;font-size:10px;color:var(--text-muted)" id="exp-date"></span>
   </div>
   <div id="main">
@@ -244,6 +256,8 @@ const S={
   theme:DATA.theme,
   collapsed:new Set(DATA.rows.filter(r=>r.collapsed&&r.hasChildren).map(r=>r.id)),
   syncing:false,
+  pan:false,      // sticky pan mode toggled by button
+  _panTemp:false, // temporary pan via spacebar / middle-button
 };
 // ── date helpers ─────────────────────────────────────────
 let DATES=[];
@@ -574,6 +588,61 @@ function setupResizer(){
   });
   document.addEventListener('mouseup',()=>{on=false;rz.classList.remove('drag');});
 }
+// ── pan / hand drag ────────────────────────────────────────
+function panActive(){return S.pan||S._panTemp;}
+function updatePanCursor(){
+  const cs=document.getElementById('chart-scroll');
+  cs.classList.toggle('pan',panActive());
+  const btn=document.getElementById('btn-pan');
+  btn.classList.toggle('active',S.pan);
+}
+function setupPan(){
+  const cs=document.getElementById('chart-scroll');
+  let dragging=false, lastX=0, lastY=0;
+  // left-button drag when pan mode is active
+  cs.addEventListener('mousedown',e=>{
+    if(e.button===0&&!panActive())return;
+    if(e.button===2)return;           // ignore right-click
+    dragging=true;lastX=e.clientX;lastY=e.clientY;
+    cs.classList.add('panning');
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove',e=>{
+    if(!dragging)return;
+    cs.scrollLeft-=e.clientX-lastX;
+    cs.scrollTop -=e.clientY-lastY;
+    lastX=e.clientX;lastY=e.clientY;
+  });
+  document.addEventListener('mouseup',e=>{
+    if(!dragging)return;
+    dragging=false;
+    cs.classList.remove('panning');
+    // if temp-pan via middle button, release it
+    if(e.button===1){S._panTemp=false;updatePanCursor();}
+  });
+  // middle mouse button activates temp pan
+  cs.addEventListener('mousedown',e=>{
+    if(e.button!==1)return;
+    S._panTemp=true;updatePanCursor();
+    dragging=true;lastX=e.clientX;lastY=e.clientY;
+    cs.classList.add('panning');
+    e.preventDefault();
+  });
+  // spacebar: hold for temp pan, release to restore
+  let spaceHeld=false;
+  document.addEventListener('keydown',e=>{
+    if(e.code==='Space'&&!spaceHeld&&document.activeElement===document.body){
+      spaceHeld=true;S._panTemp=true;updatePanCursor();e.preventDefault();
+    }
+  });
+  document.addEventListener('keyup',e=>{
+    if(e.code==='Space'){spaceHeld=false;S._panTemp=false;if(!dragging)cs.classList.remove('panning');updatePanCursor();}
+  });
+  // toolbar button
+  document.getElementById('btn-pan').onclick=()=>{
+    S.pan=!S.pan;updatePanCursor();
+  };
+}
 // ── init ───────────────────────────────────────────────────
 function init(){
   initDates();
@@ -587,6 +656,7 @@ function init(){
   setupToolbar();
   setupToggle();
   setupResizer();
+  setupPan();
   draw();
   // scroll to today
   setTimeout(()=>{
