@@ -15,7 +15,7 @@ import type {
 import type { FilterMode } from '@/features/view/viewFilter';
 import { recalc, type DerivedSchedule } from './recalc';
 import { wouldCreateCycle } from '@/services/dependency/graph';
-import { autosaveRepository, projectRepository } from '@/services/persistence/projectRepository';
+import { autosaveRepository } from '@/services/persistence/projectRepository';
 import { bridge } from '@/shared/bridge';
 import { addDaysISO, diffDaysISO } from '@/shared/date/dateUtils';
 import type { ZoomLevel } from '@/features/gantt/zoom';
@@ -78,12 +78,15 @@ interface ProjectStore {
   view: ViewState;
   dirty: boolean;
   recoveryAvailable: boolean;
+  /** Absolute file path of the currently open file, null if unsaved. */
+  currentFilePath: string | null;
 
   // --- lifecycle ---
   loadProject: (project: Project) => void;
   newProject: (name?: string) => void;
   renameProject: (name: string) => void;
   saveProject: () => Promise<void>;
+  saveAsProject: () => Promise<void>;
   flushAutosave: () => Promise<void>;
   shareExport: () => Promise<void>;
   shareImport: () => Promise<void>;
@@ -294,6 +297,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     confirmDeletePending: false,
     dirty: false,
     recoveryAvailable: false,
+    currentFilePath: null,
     view: {
       theme: 'dark',
       zoom: 'day',
@@ -329,16 +333,41 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         future: [],
         selectedTaskIds: new Set(),
         dirty: false,
-        // Groups belong to the loaded document; reset any stale filter.
+        currentFilePath: null,
         view: { ...s.view, filterMode: 'all', filterGroupId: null, focusIds: [] },
       }));
     },
 
     async saveProject() {
       commit((d) => { d.updatedAt = new Date().toISOString(); });
-      await projectRepository.save(get().derived.project);
-      await autosaveRepository.clear();
-      set({ dirty: false });
+      const project = get().derived.project;
+      const json = JSON.stringify(project, null, 2);
+      const fp = get().currentFilePath;
+      if (fp) {
+        const res = await bridge().project.saveToPath(fp, json);
+        if (res.ok) {
+          await autosaveRepository.clear();
+          set({ dirty: false });
+        }
+      } else {
+        // 저장 경로 없음 → 파일 탐색기 열기
+        const res = await bridge().project.exportFile(project.name || '간트프로젝트', json);
+        if (res.ok) {
+          await autosaveRepository.clear();
+          set({ dirty: false, currentFilePath: res.path ?? null });
+        }
+      }
+    },
+
+    async saveAsProject() {
+      commit((d) => { d.updatedAt = new Date().toISOString(); });
+      const project = get().derived.project;
+      const json = JSON.stringify(project, null, 2);
+      const res = await bridge().project.exportFile(project.name || '간트프로젝트', json);
+      if (res.ok) {
+        await autosaveRepository.clear();
+        set({ dirty: false, currentFilePath: res.path ?? null });
+      }
     },
 
     async flushAutosave() {
@@ -357,8 +386,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       try {
         const project = JSON.parse(result.json) as Project;
         get().loadProject(project);
+        if (result.path) set({ currentFilePath: result.path });
       } catch {
-        // Silently ignore malformed JSON — could show a toast in the future
+        // Silently ignore malformed JSON
       }
     },
 

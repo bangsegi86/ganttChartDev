@@ -100,10 +100,20 @@ const fallback: AppBridge = {
           reader.onerror = () => resolve({ ok: false, json: null });
           reader.readAsText(file);
         };
-        // Cancelled: resolve after short delay (no cancel event on file input)
         input.addEventListener('cancel', () => resolve({ ok: false, json: null }));
         input.click();
       });
+    },
+    async saveToPath(_filePath: string, json: string) {
+      // Browser fallback: trigger download (can't write to arbitrary paths in browser).
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = _filePath.split(/[\\/]/).pop() ?? 'project.smgantt';
+      link.click();
+      URL.revokeObjectURL(url);
+      return { ok: true };
     },
   },
   clipboard: {

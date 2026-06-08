@@ -15,8 +15,10 @@ export interface FileFilter {
 
 type MenuAction =
   | 'menu:new-project'
+  | 'menu:open-file'
   | 'menu:open-projects'
   | 'menu:save'
+  | 'menu:save-as'
   | 'menu:export-excel'
   | 'menu:export-png'
   | 'menu:export-pdf'
@@ -31,8 +33,10 @@ const bridge = {
     onAction: (callback: (action: MenuAction) => void) => {
       const actions: MenuAction[] = [
         'menu:new-project',
+        'menu:open-file',
         'menu:open-projects',
         'menu:save',
+        'menu:save-as',
         'menu:export-excel',
         'menu:export-png',
         'menu:export-pdf',
@@ -78,6 +82,8 @@ const bridge = {
       ipcRenderer.invoke('project:export-file', defaultName, json),
     importFile: (): Promise<PersistenceResult> =>
       ipcRenderer.invoke('project:import-file'),
+    saveToPath: (filePath: string, json: string): Promise<PersistenceResult> =>
+      ipcRenderer.invoke('project:save-to-path', filePath, json),
   },
   // Native clipboard — works under file:// where navigator.clipboard is
   // unavailable (file:// is not a secure context in Chromium).

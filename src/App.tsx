@@ -20,7 +20,6 @@ import { ConfirmDeleteDialog } from '@/features/dialogs/ConfirmDeleteDialog';
 import { ProjectManagerDialog } from '@/features/dialogs/ProjectManagerDialog';
 import { MarkerManager } from '@/features/dialogs/MarkerManager';
 import { ViewFilterBanner } from '@/features/view/ViewFilterBanner';
-import { createDemoProject } from '@/data/sampleData';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
 import { Button } from '@/shared/ui/Button';
 import { bridge } from '@/shared/bridge';
@@ -46,10 +45,8 @@ export default function App() {
   const [scrollTop, setScrollTop] = useState(0);
   const [recovery, setRecovery] = useState<null | (() => void)>(null);
 
-  // Bootstrap: load the demo project, and offer crash recovery if an autosave
-  // from a previous (possibly crashed) session is present.
+  // On startup just check for autosave crash recovery — do not load a demo project.
   useEffect(() => {
-    loadProject(createDemoProject());
     void (async () => {
       const recovered = await autosaveRepository.read();
       if (recovered && recovered.tasks.length > 0) {
@@ -76,10 +73,14 @@ export default function App() {
       const name = project.name || '간트';
       if (action === 'menu:new-project') {
         state.newProject();
+      } else if (action === 'menu:open-file') {
+        await state.shareImport();
       } else if (action === 'menu:open-projects') {
         setDialog('projects');
       } else if (action === 'menu:save') {
         void state.saveProject();
+      } else if (action === 'menu:save-as') {
+        void state.saveAsProject();
       } else if (action === 'menu:export-excel') {
         await exportExcel(project, name, {
           project, schedules,
@@ -107,7 +108,6 @@ export default function App() {
   return (
     <div className="flex h-full flex-col bg-surface text-content">
       <Toolbar
-        onOpenProjects={() => setDialog('projects')}
         onOpenHolidays={() => setDialog('holidays')}
         onOpenResources={() => setDialog('resources')}
         onOpenCalendar={() => setDialog('calendar')}

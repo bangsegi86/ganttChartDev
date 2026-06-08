@@ -52,7 +52,6 @@ const ZOOM_LABELS: Record<ZoomLevel, string> = {
 };
 
 interface ToolbarProps {
-  onOpenProjects: () => void;
   onOpenHolidays: () => void;
   onOpenResources: () => void;
   onOpenCalendar: () => void;
@@ -63,7 +62,6 @@ interface ToolbarProps {
 
 /** Top command bar. Groups document, edit, view and export actions. */
 export function Toolbar({
-  onOpenProjects,
   onOpenHolidays,
   onOpenResources,
   onOpenCalendar,
@@ -107,8 +105,10 @@ export function Toolbar({
   const toggleTodayLine  = useProjectStore((s) => s.toggleTodayLine);
   const toggleTheme = useProjectStore((s) => s.toggleTheme);
   const saveProject = useProjectStore((s) => s.saveProject);
+  const saveAsProject = useProjectStore((s) => s.saveAsProject);
   const shareExport = useProjectStore((s) => s.shareExport);
   const shareImport = useProjectStore((s) => s.shareImport);
+  const currentFilePath = useProjectStore((s) => s.currentFilePath);
   const setActiveView = useProjectStore((s) => s.setActiveView);
   const renameProject = useProjectStore((s) => s.renameProject);
   const projectName = useProjectStore((s) => s.derived.project.name);
@@ -367,21 +367,22 @@ export function Toolbar({
           <FileText size={14} />
         </Button>
         <Divider />
-        <Button size="sm" onClick={() => void shareExport()} title="파일로 내보내기 (.smgantt) — 다른 사람과 공유 (Ctrl+Shift+E)">
+        <Button size="sm" onClick={() => void shareExport()} title="다른 사람과 공유 — 사본을 파일로 내보내기 (.smgantt) (Ctrl+Shift+E)">
           <Download size={14} /> 공유
-        </Button>
-        <Button size="sm" onClick={() => void shareImport()} title="파일 가져오기 (.smgantt) — 다른 사람의 파일 열기 (Ctrl+Shift+I)">
-          <FolderInput size={14} /> 가져오기
         </Button>
         <Divider />
         <Button size="sm" onClick={() => useProjectStore.getState().newProject()} title="새 프로젝트">
           <FilePlus2 size={14} />
         </Button>
-        <Button size="sm" onClick={onOpenProjects} title="프로젝트 열기">
+        <Button size="sm" onClick={() => void shareImport()} title="파일 열기 (.smgantt) — 탐색기에서 파일 선택 (Ctrl+O)">
           <FolderOpen size={14} /> 열기
         </Button>
-        <Button size="sm" variant={dirty ? 'accent' : 'default'} onClick={() => void saveProject()} title="저장 (Ctrl+S)">
+        <Button size="sm" variant={dirty ? 'accent' : 'default'} onClick={() => void saveProject()}
+          title={currentFilePath ? `저장 — ${currentFilePath} (Ctrl+S)` : '저장 — 탐색기에서 위치 선택 (Ctrl+S)'}>
           <Save size={14} /> {dirty ? '저장*' : '저장'}
+        </Button>
+        <Button size="sm" onClick={() => void saveAsProject()} title="다른 이름으로 저장 — 탐색기에서 위치 선택 (Ctrl+Shift+S)">
+          <FolderInput size={14} /> 다른 이름
         </Button>
         <Button size="icon" variant="ghost" onClick={toggleTheme} title="테마 전환">
           {view.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}

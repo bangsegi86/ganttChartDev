@@ -167,13 +167,18 @@ ipcMain.handle('project:import-file', async () => {
     ],
     properties: ['openFile'],
   });
-  if (canceled || !filePaths[0]) return { ok: false, json: null };
+  if (canceled || !filePaths[0]) return { ok: false, json: null, path: null };
   try {
     const json = await fs.readFile(filePaths[0], 'utf-8');
-    return { ok: true, json };
+    return { ok: true, json, path: filePaths[0] };
   } catch {
-    return { ok: false, json: null };
+    return { ok: false, json: null, path: null };
   }
+});
+
+ipcMain.handle('project:save-to-path', async (_e, filePath: string, json: string) => {
+  await fs.writeFile(filePath, json, 'utf-8');
+  return { ok: true, path: filePath };
 });
 
 function sanitize(id: string): string {
@@ -191,9 +196,10 @@ function buildKoreanMenu(): void {
 
   const fileSubmenu: MI[] = [
     { label: '새 프로젝트', accelerator: 'CmdOrCtrl+N', click: () => send('menu:new-project') },
-    { label: '열기…', accelerator: 'CmdOrCtrl+O', click: () => send('menu:open-projects') },
+    { label: '열기…', accelerator: 'CmdOrCtrl+O', click: () => send('menu:open-file') },
     { type: 'separator' },
     { label: '저장', accelerator: 'CmdOrCtrl+S', click: () => send('menu:save') },
+    { label: '다른 이름으로 저장…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('menu:save-as') },
     { type: 'separator' },
     { label: '파일로 내보내기 (.smgantt)…', accelerator: 'CmdOrCtrl+Shift+E', click: () => send('menu:share-export') },
     { label: '파일 가져오기 (.smgantt)…', accelerator: 'CmdOrCtrl+Shift+I', click: () => send('menu:share-import') },
