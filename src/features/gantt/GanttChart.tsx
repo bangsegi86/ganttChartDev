@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Minus, Plus } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
@@ -72,6 +72,12 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
    *  effect from snapping back to a stale scrollTop state (RAF-throttle lag). */
   const isUserScrollingRef = useRef(false);
   const clearUserScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Tracks previous effectiveDayWidth so zoom-anchor can compute the ratio. */
+  const prevEffectiveDayWidthRef = useRef<number | null>(null);
+  /** True while a Ctrl+Wheel zoom is in progress so the anchor uses mouse position. */
+  const isWheelZoomingRef = useRef(false);
+  /** Mouse-position anchor captured just before a Ctrl+Wheel zoom. */
+  const wheelAnchorRef = useRef({ timeline: 0, mouseX: 0 });
 
   // DOM refs for imperative tooltip + toast (avoids React state churning).
   const tooltipRef    = useRef<HTMLDivElement>(null);
@@ -601,7 +607,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     if (bar) useProjectStore.getState().setInspecting(bar.taskId);
   };
 
-  // Ctrl+Wheel: fine-zoom the day width without changing the level preset.
+  // Ctrl+Wheel: fine-zoom anchored to the cursor position.
   // Registered as non-passive so preventDefault() actually works.
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -610,11 +616,44 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      // Capture cursor anchor before dayWidth changes so useLayoutEffect can
+      // restore the exact timeline position under the cursor.
+      const rect = scroller.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      wheelAnchorRef.current = { timeline: scroller.scrollLeft + mouseX, mouseX };
+      isWheelZoomingRef.current = true;
       useProjectStore.getState().scaleDayWidth(factor);
     };
     scroller.addEventListener('wheel', handler, { passive: false });
     return () => scroller.removeEventListener('wheel', handler);
   }, []);
+
+  // After every effectiveDayWidth change, restore the scroll anchor so the
+  // visible content stays put. useLayoutEffect runs synchronously after the
+  // React commit (before paint), ensuring the corrected scrollLeft is live
+  // before the canvas redraws.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const oldDW = prevEffectiveDayWidthRef.current;
+    const newDW = effectiveDayWidth;
+    // Initialise ref on first run without scrolling.
+    if (oldDW === null) { prevEffectiveDayWidthRef.current = newDW; return; }
+    if (Math.abs(oldDW - newDW) < 0.001) return;
+    prevEffectiveDayWidthRef.current = newDW;
+
+    const ratio = newDW / oldDW;
+    if (isWheelZoomingRef.current) {
+      // Ctrl+Wheel: keep the timeline point under the cursor fixed.
+      const { timeline, mouseX } = wheelAnchorRef.current;
+      scroller.scrollLeft = Math.max(0, timeline * ratio - mouseX);
+      isWheelZoomingRef.current = false;
+    } else {
+      // Preset / slider zoom: keep the visible viewport centre fixed.
+      const viewCenter = scroller.scrollLeft + scroller.clientWidth / 2;
+      scroller.scrollLeft = Math.max(0, viewCenter * ratio - scroller.clientWidth / 2);
+    }
+  }, [effectiveDayWidth]);
 
   const contentHeight = rows.length * ROW_HEIGHT + SCROLL_BOTTOM_PADDING;
 
