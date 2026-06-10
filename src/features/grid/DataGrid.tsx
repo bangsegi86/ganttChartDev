@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, Lock, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Ban, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, Lock, PanelLeftClose, PanelLeftOpen, RotateCcw } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -797,6 +797,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
             if (inGroup) removeTasksFromGroup(groupId, [contextMenu.taskId]);
             else addTasksToGroup(groupId, [contextMenu.taskId]);
           }}
+          onUncancel={(ids) => batchUpdateTasks(ids.map((id) => ({ id, patch: { cancelled: false } })))}
+          onCancel={(ids) => batchUpdateTasks(ids.map((id) => ({ id, patch: { cancelled: true } })))}
         />,
         document.body,
       )}
@@ -832,6 +834,8 @@ interface ContextMenuProps {
   onPasteAfter: (id: string) => void;
   onPasteEnd: () => void;
   onGroupToggle: (groupId: string, inGroup: boolean) => void;
+  onUncancel: (ids: string[]) => void;
+  onCancel: (ids: string[]) => void;
 }
 
 function ContextMenu({
@@ -841,6 +845,7 @@ function ContextMenu({
   onAddBefore, onAddAfter, onToggleCollapse,
   onSortChildren, onScrollToDate, onCopyRows,
   onPasteAfter, onPasteEnd, onGroupToggle,
+  onUncancel, onCancel,
 }: ContextMenuProps) {
   const menuRow = rows.find((r) => r.task.id === contextMenu.taskId);
   const taskId  = contextMenu.taskId;
@@ -850,6 +855,12 @@ function ContextMenu({
   // act on the whole selection; otherwise act on just the right-clicked task.
   const targetIds = selected.has(taskId) && selected.size > 1 ? [...selected] : [taskId];
   const copyIds = new Set(targetIds);
+
+  // Derived cancel states for the target set.
+  const cancelledIds  = targetIds.filter((id) => rows.find((r) => r.task.id === id)?.task.cancelled);
+  const activeIds     = targetIds.filter((id) => !rows.find((r) => r.task.id === id)?.task.cancelled);
+  const hasCancelled  = cancelledIds.length > 0;
+  const hasActive     = activeIds.length > 0;
 
   const item = (label: React.ReactNode, onClick: () => void, disabled = false) => (
     <button
@@ -962,7 +973,26 @@ function ContextMenu({
 
       {divider()}
 
-      {/* 5. 보기 그룹 (서브메뉴) */}
+      {/* 5. 일정 취소 / 복구 */}
+      {section('일정 상태')}
+      {hasCancelled && item(
+        <span className="flex items-center gap-1.5">
+          <RotateCcw size={12} className="text-green-500" />
+          {cancelledIds.length > 1 ? `취소 해제 — 복구 (${cancelledIds.length}개)` : '취소 해제 — 복구'}
+        </span>,
+        () => { onUncancel(cancelledIds); onClose(); },
+      )}
+      {hasActive && item(
+        <span className="flex items-center gap-1.5">
+          <Ban size={12} className="text-red-400" />
+          {activeIds.length > 1 ? `취소 처리 (${activeIds.length}개)` : '취소 처리'}
+        </span>,
+        () => { onCancel(activeIds); onClose(); },
+      )}
+
+      {divider()}
+
+      {/* 6. 보기 그룹 (서브메뉴) */}
       <div className="relative">
         <button
           className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-surface-3"
