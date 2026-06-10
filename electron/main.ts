@@ -28,11 +28,16 @@ async function ensureDir(dir: string): Promise<void> {
 }
 
 function createWindow(): void {
+  const iconPath = process.platform === 'win32'
+    ? path.join(__dirname, '..', 'build', 'icon.ico')
+    : path.join(__dirname, '..', 'build', 'icon.png');
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 1024,
     minHeight: 640,
+    icon: iconPath,
     backgroundColor: '#0f172a',
     show: false,
     webPreferences: {
