@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Hand, Minus, Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { Minus, Plus } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -64,8 +64,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const selectedDepIdRef = useRef<string | null>(null);
   const dragRef = useRef<DragState>(NO_DRAG);
   const spaceHeldRef = useRef(false);
-  const panModeRef = useRef(false);
-  const [panMode, setPanMode] = useState(false);
+  /** Pending dependency id captured on empty-area mousedown, resolved on click. */
+  const pendingDepRef = useRef<string | null>(null);
   /** Prevents scroll-event feedback when we programmatically set scrollTop. */
   const isSyncingRef = useRef(false);
   /** True while the user is actively scrolling this panel; blocks the sync
@@ -302,7 +302,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     const up = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
         spaceHeldRef.current = false;
-        if (!dragRef.current.mode) setDomCursor(panModeRef.current ? 'grab' : 'default');
+        if (!dragRef.current.mode) setDomCursor('grab');
       }
     };
     window.addEventListener('keydown', down);
@@ -401,7 +401,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
 
   const onMouseMoveHover = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (dragRef.current.mode) return; // cursor managed by active drag
-    if (spaceHeldRef.current || panModeRef.current) { setDomCursor('grab'); return; }
+    if (spaceHeldRef.current) { setDomCursor('grab'); return; }
     const { bar, edge } = hitTest(e.clientX, e.clientY);
 
     // Bar hover memo tooltip
@@ -431,13 +431,15 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     }
 
     if (!bar) {
-      setDomCursor('default');
+      // Empty area → pan (손가락) cursor by default.
+      setDomCursor('grab');
     } else if (bar.isSummary) {
       setDomCursor('default');
     } else if (edge === 'resize-start' || edge === 'resize-end') {
       setDomCursor('ew-resize');
     } else {
-      setDomCursor('grab');
+      // Over a movable bar → move cursor (pan disabled here).
+      setDomCursor('move');
     }
   }, [setDomCursor]);
 
@@ -448,9 +450,15 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const onMouseDown = (e: React.MouseEvent) => {
     const scroller = scrollerRef.current!;
     const store = useProjectStore.getState();
-    const panning = spaceHeldRef.current || panModeRef.current || e.button === 1;
+    // Space held or middle button forces pan everywhere (even over bars).
+    const forcePan = spaceHeldRef.current || e.button === 1;
+    const { bar, edge } = hitTest(e.clientX, e.clientY);
 
-    if (panning) {
+    // Empty area (or forced) → pan by default. A no-move click clears the
+    // selection or selects a dependency line (resolved in onWindowUp).
+    if (forcePan || !bar) {
+      const scRect = scroller.getBoundingClientRect();
+      pendingDepRef.current = bar ? null : hitTestDep(e.clientX - scRect.left, e.clientY - scRect.top);
       dragRef.current = {
         ...NO_DRAG,
         mode: 'pan',
@@ -466,21 +474,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       return;
     }
 
-    const { bar, edge } = hitTest(e.clientX, e.clientY);
-    if (!bar) {
-      const scRect = scroller.getBoundingClientRect();
-      const depId = hitTestDep(e.clientX - scRect.left, e.clientY - scRect.top);
-      if (depId) {
-        selectedDepIdRef.current = depId;
-        draw();
-      } else {
-        selectedDepIdRef.current = null;
-        store.clearSelection();
-      }
-      return;
-    }
+    // Over a bar → bar interaction (pan disabled here).
     selectedDepIdRef.current = null;
-
     store.selectTask(bar.taskId, e.ctrlKey || e.metaKey);
 
     // Summary bars can only be selected; their dates are auto-calculated.
@@ -556,7 +551,22 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       const store = useProjectStore.getState();
 
       hideTooltip();
-      setDomCursor(panModeRef.current || spaceHeldRef.current ? 'grab' : 'default');
+      setDomCursor('grab');
+
+      // Pan that didn't move = a click → select dependency or clear selection.
+      if (drag.mode === 'pan') {
+        const moved = Math.abs(e.clientX - drag.startClientX) > 3
+          || Math.abs(e.clientY - drag.startClientY) > 3;
+        if (!moved) {
+          if (pendingDepRef.current) {
+            selectedDepIdRef.current = pendingDepRef.current;
+          } else {
+            selectedDepIdRef.current = null;
+            store.clearSelection();
+          }
+        }
+        pendingDepRef.current = null;
+      }
 
       if (drag.mode && drag.taskId) {
         if (drag.mode === 'move' && drag.deltaDays !== 0) {
@@ -615,10 +625,10 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         <canvas ref={headerCanvasRef} className="block h-full w-full" />
       </div>
 
-      {/* Scrolling body */}
+      {/* Scrolling body — default cursor is grab (손가락/pan) over empty area */}
       <div
         ref={scrollerRef}
-        className="relative flex-1 overflow-auto"
+        className="relative flex-1 cursor-grab overflow-auto"
         onScroll={handleScroll}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMoveHover}
@@ -658,20 +668,6 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
 
       {/* Zoom slider — bottom-right of the gantt area */}
       <div className="pointer-events-auto absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-2xs shadow-sm">
-        <button
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={() => {
-            const next = !panModeRef.current;
-            panModeRef.current = next;
-            setPanMode(next);
-            if (!dragRef.current.mode) setDomCursor(next ? 'grab' : 'default');
-          }}
-          className={`text-content-muted hover:text-content${panMode ? ' text-[rgb(var(--color-accent))]' : ''}`}
-          title="이동 모드 (스페이스)"
-        >
-          <Hand size={12} />
-        </button>
-        <div className="mx-0.5 h-3 w-px bg-border" />
         <button
           onMouseDown={(e) => e.stopPropagation()}
           onClick={() => scaleDayWidth(1 / 1.2)}
