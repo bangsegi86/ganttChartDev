@@ -45,6 +45,7 @@ export default function App() {
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [recovery, setRecovery] = useState<null | (() => void)>(null);
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
 
   // On startup just check for autosave crash recovery — do not load a demo project.
   useEffect(() => {
@@ -102,9 +103,28 @@ export default function App() {
         await state.shareExport();
       } else if (action === 'menu:share-import') {
         await state.shareImport();
+      } else if (action === 'menu:close-requested') {
+        // Window X button was clicked. If there are unsaved changes ask the
+        // user what to do; otherwise confirm close immediately.
+        if (useProjectStore.getState().dirty) {
+          setCloseConfirmOpen(true);
+        } else {
+          bridge().menu.confirmClose();
+        }
       }
     });
   }, []);
+
+  const handleSaveAndClose = async () => {
+    setCloseConfirmOpen(false);
+    await useProjectStore.getState().saveProject();
+    bridge().menu.confirmClose();
+  };
+
+  const handleDiscardAndClose = () => {
+    setCloseConfirmOpen(false);
+    bridge().menu.confirmClose();
+  };
 
   return (
     <div className="flex h-full flex-col bg-surface text-content">
@@ -158,6 +178,29 @@ export default function App() {
       <MarkerManager open={dialog === 'markers'} onClose={() => setDialog(null)} />
       <TaskInspector />
       <ConfirmDeleteDialog />
+
+      {/* Unsaved-changes guard — shown when user clicks X with pending edits */}
+      {closeConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-80 rounded-xl border border-border bg-surface-2 p-6 shadow-2xl">
+            <h2 className="mb-1 text-sm font-semibold text-content">저장하지 않은 변경 사항</h2>
+            <p className="mb-5 text-xs text-content-muted">
+              저장되지 않은 변경 사항이 있습니다. 닫기 전에 저장하시겠습니까?
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button size="sm" variant="accent" className="w-full justify-center" onClick={() => void handleSaveAndClose()}>
+                저장하고 닫기
+              </Button>
+              <Button size="sm" variant="danger" className="w-full justify-center" onClick={handleDiscardAndClose}>
+                저장 안 하고 닫기
+              </Button>
+              <Button size="sm" className="w-full justify-center" onClick={() => setCloseConfirmOpen(false)}>
+                취소
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -26,10 +26,13 @@ type MenuAction =
   | 'menu:zoom-out'
   | 'menu:zoom-reset'
   | 'menu:share-export'
-  | 'menu:share-import';
+  | 'menu:share-import'
+  | 'menu:close-requested';
 
 const bridge = {
   menu: {
+    /** Tell the main process it is safe to close the window now. */
+    confirmClose: () => ipcRenderer.send('app:confirm-close'),
     onAction: (callback: (action: MenuAction) => void) => {
       const actions: MenuAction[] = [
         'menu:new-project',
@@ -45,6 +48,7 @@ const bridge = {
         'menu:zoom-reset',
         'menu:share-export',
         'menu:share-import',
+        'menu:close-requested',
       ];
       const listeners = actions.map((ch) => {
         const fn = () => callback(ch);

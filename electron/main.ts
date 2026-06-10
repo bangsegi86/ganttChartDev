@@ -11,6 +11,8 @@ const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
 
 let mainWindow: BrowserWindow | null = null;
+/** Set to true once the renderer has confirmed it is safe to close the window. */
+let allowClose = false;
 
 // Persistence lives in the user-data directory so it survives app updates and
 // is writable on all platforms. We use a documents-style JSON store; the same
@@ -28,6 +30,7 @@ async function ensureDir(dir: string): Promise<void> {
 }
 
 function createWindow(): void {
+  allowClose = false; // reset for each new window
   const iconPath = process.platform === 'win32'
     ? path.join(__dirname, '..', 'build', 'icon.ico')
     : path.join(__dirname, '..', 'build', 'icon.png');
@@ -51,6 +54,13 @@ function createWindow(): void {
   });
 
   mainWindow.once('ready-to-show', () => mainWindow?.show());
+
+  // Ask the renderer whether there are unsaved changes before closing.
+  mainWindow.on('close', (e) => {
+    if (allowClose) return;
+    e.preventDefault();
+    mainWindow?.webContents.send('menu:close-requested');
+  });
 
   // Open external links in the OS browser, never inside the app window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -193,6 +203,12 @@ function sanitize(id: string): string {
 function send(channel: string) {
   mainWindow?.webContents.send(channel);
 }
+
+// Renderer calls this once it has either saved or discarded changes.
+ipcMain.on('app:confirm-close', () => {
+  allowClose = true;
+  mainWindow?.close();
+});
 
 type MI = Electron.MenuItemConstructorOptions;
 

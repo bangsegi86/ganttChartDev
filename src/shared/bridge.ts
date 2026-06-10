@@ -32,6 +32,7 @@ function lsSet(key: string, value: string): void {
 
 const fallback: AppBridge = {
   menu: {
+    confirmClose: () => {},
     onAction: () => () => {},
   },
   persistence: {
