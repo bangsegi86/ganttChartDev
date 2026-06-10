@@ -4,7 +4,7 @@ import { Ban, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, Grip
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
-import { HEADER_HEIGHT, ROW_HEIGHT, SCROLL_BOTTOM_PADDING } from '@/features/gantt/layout';
+import { HEADER_HEIGHT, SCROLL_BOTTOM_PADDING } from '@/features/gantt/layout';
 import { cn } from '@/shared/ui/cn';
 import type { Priority, Resource, Task } from '@/entities';
 import { GridCell } from './GridCell';
@@ -158,6 +158,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const resources          = useProjectStore((s) => s.derived.project.resources);
   const gridCollapsed      = useProjectStore((s) => s.view.gridCollapsed);
   const toggleGridCollapse = useProjectStore((s) => s.toggleGridCollapse);
+  const rowHeight          = useProjectStore((s) => s.view.rowHeight);
 
   // --- state ---
   const [columns, setColumns]       = useState(DEFAULT_COLUMNS);
@@ -246,8 +247,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     if (idx < 0) return;
     const el = scrollerRef.current;
     if (!el) return;
-    const top    = idx * ROW_HEIGHT;
-    const bottom = top + ROW_HEIGHT;
+    const top    = idx * rowHeight;
+    const bottom = top + rowHeight;
     if (top < el.scrollTop) {
       el.scrollTop = top;
       onScrollTopChange(top);
@@ -270,8 +271,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
 
   // --- viewport virtualization ---
   const viewportH = scrollerRef.current?.clientHeight ?? 800;
-  const first     = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 4);
-  const last      = Math.min(rows.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + 4);
+  const first     = Math.max(0, Math.floor(scrollTop / rowHeight) - 4);
+  const last      = Math.min(rows.length, Math.ceil((scrollTop + viewportH) / rowHeight) + 4);
   const visible   = rows.slice(first, last);
   const totalWidth = columns.reduce((s, c) => s + c.width, 0);
 
@@ -707,7 +708,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         role="grid"
         aria-rowcount={rows.length}
       >
-        <div style={{ height: rows.length * ROW_HEIGHT + SCROLL_BOTTOM_PADDING, minWidth: totalWidth, position: 'relative' }}>
+        <div style={{ height: rows.length * rowHeight + SCROLL_BOTTOM_PADDING, minWidth: totalWidth, position: 'relative' }}>
           {visible.map((row, visIdx) => {
             const rowIdx      = first + visIdx;
             const inRange     = rangeInfo ? rowIdx >= rangeInfo.minRow && rowIdx <= rangeInfo.maxRow : false;
@@ -718,7 +719,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
                 key={row.task.id}
                 row={row}
                 columns={columns}
-                top={rowIdx * ROW_HEIGHT}
+                top={rowIdx * rowHeight}
+                height={rowHeight}
                 selected={selected.has(row.task.id)}
                 isCut={cutTaskIds.has(row.task.id)}
                 critical={showCritical && (schedules.get(row.task.id)?.isCritical ?? false)}
@@ -1063,6 +1065,7 @@ interface GridRowProps {
   row: VisibleRow;
   columns: ColumnDef[];
   top: number;
+  height: number;
   selected: boolean;
   /** True while this row is marked for a pending cut/move. */
   isCut: boolean;
@@ -1088,6 +1091,7 @@ const GridRow = memo(function GridRow({
   row,
   columns,
   top,
+  height,
   selected,
   isCut,
   critical,
@@ -1119,7 +1123,7 @@ const GridRow = memo(function GridRow({
         isCut && 'opacity-60 outline-dashed outline-1 -outline-offset-1 outline-accent/60',
         isDragOver && 'shadow-[0_-2px_0_0_rgb(var(--color-accent))]',
       )}
-      style={{ top, height: ROW_HEIGHT }}
+      style={{ top, height }}
       draggable
       onMouseDown={(e) => onSelect(task.id, e.ctrlKey || e.metaKey, e.shiftKey)}
       onDragStart={(e) => { e.stopPropagation(); onDragStart(task.id); }}

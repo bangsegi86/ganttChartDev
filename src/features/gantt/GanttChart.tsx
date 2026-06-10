@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { Minus, Plus } from 'lucide-react';
+import { AlignJustify, Minus, Plus } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -14,7 +14,7 @@ import {
   type DepHitbox,
   type GanttRenderModel,
 } from './renderGantt';
-import { HEADER_HEIGHT, RESIZE_HANDLE, ROW_HEIGHT, SCROLL_BOTTOM_PADDING } from './layout';
+import { HEADER_HEIGHT, RESIZE_HANDLE, SCROLL_BOTTOM_PADDING } from './layout';
 import type { BaselineEntry, Task, TaskId } from '@/entities';
 import { addDaysISO } from '@/shared/date/dateUtils';
 
@@ -91,6 +91,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const linkSourceId = useProjectStore((s) => s.linkSourceId);
   const scaleDayWidth = useProjectStore((s) => s.scaleDayWidth);
   const setDayWidthScale = useProjectStore((s) => s.setDayWidthScale);
+  const rowHeight = useProjectStore((s) => s.view.rowHeight);
+  const setRowHeight = useProjectStore((s) => s.setRowHeight);
   const ganttScrollTo = useProjectStore((s) => s.view.ganttScrollTo);
   const clearGanttScroll = useProjectStore((s) => s.clearGanttScroll);
 
@@ -238,8 +240,9 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         : null,
       selectedDepId: selectedDepIdRef.current,
       markers: project.markers ?? [],
+      rowHeight,
     };
-  }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected, view, baselineMap, taskGroupColor, taskAssigneeColor]);
+  }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected, view, baselineMap, taskGroupColor, taskAssigneeColor, rowHeight]);
 
   const draw = useCallback(() => {
     const scroller = scrollerRef.current;
@@ -655,7 +658,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     }
   }, [effectiveDayWidth]);
 
-  const contentHeight = rows.length * ROW_HEIGHT + SCROLL_BOTTOM_PADDING;
+  const contentHeight = rows.length * rowHeight + SCROLL_BOTTOM_PADDING;
 
   return (
     <div className="relative flex h-full min-w-0 flex-1 flex-col bg-surface">
@@ -705,38 +708,76 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         />
       </div>
 
-      {/* Zoom slider — bottom-right of the gantt area */}
-      <div className="pointer-events-auto absolute bottom-4 right-4 z-20 flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-2xs shadow-sm">
-        <button
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={() => scaleDayWidth(1 / 1.2)}
-          className="text-content-muted hover:text-content"
-          title="축소"
-        >
-          <Minus size={12} />
-        </button>
-        <input
-          type="range"
-          min={0.25}
-          max={4}
-          step={0.05}
-          value={view.dayWidthScale}
-          onMouseDown={(e) => e.stopPropagation()}
-          onChange={(e) => setDayWidthScale(Number(e.target.value))}
-          className="w-20 accent-[rgb(var(--color-accent))]"
-          title="가로 비율 조정"
-        />
-        <button
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={() => scaleDayWidth(1.2)}
-          className="text-content-muted hover:text-content"
-          title="확대"
-        >
-          <Plus size={12} />
-        </button>
-        <span className="w-9 text-right tabular-nums text-content-muted">
-          {Math.round(view.dayWidthScale * 100)}%
-        </span>
+      {/* Bottom-right controls: zoom + row-height */}
+      <div className="pointer-events-auto absolute bottom-4 right-4 z-20 flex flex-col items-stretch gap-1">
+        {/* Zoom slider */}
+        <div className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-2xs shadow-sm">
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => scaleDayWidth(1 / 1.2)}
+            className="text-content-muted hover:text-content"
+            title="축소"
+          >
+            <Minus size={12} />
+          </button>
+          <input
+            type="range"
+            min={0.25}
+            max={4}
+            step={0.05}
+            value={view.dayWidthScale}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => setDayWidthScale(Number(e.target.value))}
+            className="w-20 accent-[rgb(var(--color-accent))]"
+            title="가로 비율 조정"
+          />
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => scaleDayWidth(1.2)}
+            className="text-content-muted hover:text-content"
+            title="확대"
+          >
+            <Plus size={12} />
+          </button>
+          <span className="w-9 text-right tabular-nums text-content-muted">
+            {Math.round(view.dayWidthScale * 100)}%
+          </span>
+        </div>
+
+        {/* Row-height slider */}
+        <div className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-2xs shadow-sm">
+          <AlignJustify size={11} className="shrink-0 text-content-muted" />
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => setRowHeight(rowHeight - 4)}
+            className="text-content-muted hover:text-content"
+            title="행 간격 줄이기"
+          >
+            <Minus size={12} />
+          </button>
+          <input
+            type="range"
+            min={20}
+            max={80}
+            step={4}
+            value={rowHeight}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => setRowHeight(Number(e.target.value))}
+            className="w-20 accent-[rgb(var(--color-accent))]"
+            title="행 높이 조정"
+          />
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => setRowHeight(rowHeight + 4)}
+            className="text-content-muted hover:text-content"
+            title="행 간격 늘리기"
+          >
+            <Plus size={12} />
+          </button>
+          <span className="w-7 text-right tabular-nums text-content-muted">
+            {rowHeight}
+          </span>
+        </div>
       </div>
 
       {/* Undo toast — slides up from the bottom of the panel */}

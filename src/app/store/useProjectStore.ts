@@ -20,6 +20,7 @@ import { bridge } from '@/shared/bridge';
 import { addDaysISO, diffDaysISO } from '@/shared/date/dateUtils';
 import type { ZoomLevel } from '@/features/gantt/zoom';
 import { stepZoom } from '@/features/gantt/zoom';
+import { DEFAULT_ROW_HEIGHT } from '@/features/gantt/layout';
 
 const HISTORY_LIMIT = 100; // ≥100 undo steps as required.
 const AUTOSAVE_INTERVAL_MS = 60_000; // 1-minute autosave.
@@ -48,6 +49,8 @@ interface ViewState {
   filterAssigneeIds: string[];
   /** Fine zoom multiplier applied on top of the preset day-width (Ctrl+Wheel). */
   dayWidthScale: number;
+  /** Pixel height of each task row. Controls the vertical spacing between bars. */
+  rowHeight: number;
   /**
    * One-shot scroll request for the gantt: when non-null the GanttChart will
    * scroll so this ISO date is near the left edge of the viewport, then clear
@@ -200,6 +203,8 @@ interface ProjectStore {
   scaleDayWidth: (factor: number) => void;
   /** Set the fine-zoom dayWidth scale directly. Clamped to [0.1, 10]. */
   setDayWidthScale: (scale: number) => void;
+  /** Set the row height in pixels. Clamped to [20, 80]. */
+  setRowHeight: (height: number) => void;
   /**
    * Sort the direct children of the given task by their start date (ascending).
    * Sibling order values are reassigned; the subtrees themselves are untouched.
@@ -315,6 +320,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       focusIds: [],
       filterAssigneeIds: [],
       dayWidthScale: 1.0,
+      rowHeight: DEFAULT_ROW_HEIGHT,
       ganttScrollTo: null,
     },
 
@@ -1202,6 +1208,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
     setDayWidthScale(scale) {
       set((s) => ({ view: { ...s.view, dayWidthScale: Math.max(0.1, Math.min(10, scale)) } }));
+    },
+    setRowHeight(height) {
+      set((s) => ({ view: { ...s.view, rowHeight: Math.max(20, Math.min(80, Math.round(height))) } }));
     },
 
     sortChildrenByStart(parentId) {

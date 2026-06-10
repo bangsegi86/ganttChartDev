@@ -1,7 +1,7 @@
 import type { ChartMarker, Dependency, TaskId, TaskSchedule, BaselineEntry } from '@/entities';
 import { addDaysISO, toDate, weekdayOf, type ISODate } from '@/shared/date/dateUtils';
 import { Timeline } from './timeline';
-import { BAR_HEIGHT, BAR_VPAD, ROW_HEIGHT } from './layout';
+import { BAR_HEIGHT } from './layout';
 import { PRIORITY_COLORS, type CanvasPalette } from './colors';
 import type { VisibleRow } from '@/features/grid/treeModel';
 import type { ZoomConfig } from './zoom';
@@ -34,6 +34,8 @@ export interface GanttRenderModel {
   selectedDepId?: string | null;
   /** User-defined vertical marker lines. */
   markers: ChartMarker[];
+  /** Pixel height of each task row (controls vertical spacing). */
+  rowHeight: number;
 }
 
 /** Geometry of a rendered bar; cached for hit-testing. */
@@ -69,6 +71,7 @@ export function renderGanttBody(
   scrollTop: number,
 ): BarRect[] {
   const { palette, rows } = model;
+  const rh = model.rowHeight;
   ctx.clearRect(0, 0, viewportW, viewportH);
   ctx.fillStyle = palette.surface;
   ctx.fillRect(0, 0, viewportW, viewportH);
@@ -79,8 +82,8 @@ export function renderGanttBody(
   drawMarkers(ctx, model, viewportH, scrollLeft);
 
   // Visible row window.
-  const firstRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 1);
-  const lastRow = Math.min(rows.length - 1, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + 1);
+  const firstRow = Math.max(0, Math.floor(scrollTop / rh) - 1);
+  const lastRow = Math.min(rows.length - 1, Math.ceil((scrollTop + viewportH) / rh) + 1);
 
   const bars: BarRect[] = [];
   for (let i = firstRow; i <= lastRow; i++) {
@@ -124,15 +127,16 @@ function drawGridLines(
   scrollTop: number,
 ): void {
   const { timeline, palette } = model;
+  const rh = model.rowHeight;
   ctx.lineWidth = 1;
 
   // Horizontal row separators.
   ctx.strokeStyle = palette.grid;
   ctx.beginPath();
-  const firstRow = Math.floor(scrollTop / ROW_HEIGHT);
-  const lastRow = Math.ceil((scrollTop + viewportH) / ROW_HEIGHT);
+  const firstRow = Math.floor(scrollTop / rh);
+  const lastRow = Math.ceil((scrollTop + viewportH) / rh);
   for (let r = firstRow; r <= lastRow; r++) {
-    const y = Math.floor(r * ROW_HEIGHT - scrollTop) + 0.5;
+    const y = Math.floor(r * rh - scrollTop) + 0.5;
     ctx.moveTo(0, y);
     ctx.lineTo(viewportW, y);
   }
@@ -238,8 +242,10 @@ function drawBar(
   scrollTop: number,
 ): BarRect | null {
   const { timeline, palette, schedules, selected, showCritical, baseline, showBaseline, taskGroupColor, taskAssigneeColor, dragPreview } = model;
+  const rh = model.rowHeight;
+  const barVpad = (rh - BAR_HEIGHT) / 2;
   const t = row.task;
-  const y = row.index * ROW_HEIGHT - scrollTop;
+  const y = row.index * rh - scrollTop;
   const x = timeline.xFor(t.start) - scrollLeft;
   const isSummary = row.hasChildren;
   const critical = showCritical && (schedules.get(t.id)?.isCritical ?? false);
@@ -252,13 +258,13 @@ function drawBar(
       const bx = timeline.xFor(b.start) - scrollLeft;
       const bw = (durationPx(timeline, b.start, b.end)) || timeline.dayWidth;
       ctx.fillStyle = palette.baseline;
-      ctx.fillRect(bx, y + ROW_HEIGHT - 6, bw, 4);
+      ctx.fillRect(bx, y + rh - 6, bw, 4);
     }
   }
 
   if (t.isMilestone) {
     const cx = x + timeline.dayWidth / 2;
-    const cy = y + ROW_HEIGHT / 2;
+    const cy = y + rh / 2;
     const r = BAR_HEIGHT / 2;
     if (cancelled) { ctx.save(); ctx.globalAlpha = 0.4; }
     ctx.fillStyle = cancelled ? palette.textMuted : (critical ? palette.critical : '#8b5cf6');
@@ -285,7 +291,7 @@ function drawBar(
   }
 
   const w = Math.max(timeline.dayWidth, durationPx(timeline, t.start, t.end));
-  const barY = y + BAR_VPAD;
+  const barY = y + barVpad;
 
   // Draw the bar at reduced opacity when cancelled.
   if (cancelled) { ctx.save(); ctx.globalAlpha = 0.45; }
@@ -342,7 +348,7 @@ function drawBar(
     ctx.fillStyle = palette.textMuted;
     ctx.font = '11px ui-sans-serif, system-ui';
     ctx.textBaseline = 'middle';
-    ctx.fillText(t.name, x + w + 6, y + ROW_HEIGHT / 2, 240);
+    ctx.fillText(t.name, x + w + 6, y + rh / 2, 240);
   }
 
   // Delta label while dragging: "+3일" badge centred on the bar.
@@ -376,6 +382,7 @@ function drawDependencies(
   lastRow: number,
 ): void {
   const { dependencies, rowIndex, timeline, palette, rows, schedules, showCritical, selectedDepId } = model;
+  const rh = model.rowHeight;
 
   const paintDep = (dep: Dependency, highlight: boolean) => {
     const fi = rowIndex.get(dep.fromId);
@@ -389,8 +396,8 @@ function drawDependencies(
     const fromStartX = timeline.xFor(from.start) - scrollLeft;
     const toStartX = timeline.xFor(to.start) - scrollLeft;
     const toEndX = timeline.xFor(to.end) + timeline.dayWidth - scrollLeft;
-    const fromY = fi * ROW_HEIGHT - scrollTop + ROW_HEIGHT / 2;
-    const toY = ti * ROW_HEIGHT - scrollTop + ROW_HEIGHT / 2;
+    const fromY = fi * rh - scrollTop + rh / 2;
+    const toY = ti * rh - scrollTop + rh / 2;
 
     let sx = fromEndX;
     let tx = toStartX;
@@ -457,6 +464,7 @@ export function computeDepHitboxes(
   scrollTop: number,
 ): DepHitbox[] {
   const { dependencies, rowIndex, timeline, rows } = model;
+  const rh = model.rowHeight;
   const hitboxes: DepHitbox[] = [];
   for (const dep of dependencies) {
     const fi = rowIndex.get(dep.fromId);
@@ -469,8 +477,8 @@ export function computeDepHitboxes(
     const fromStartX = timeline.xFor(from.start) - scrollLeft;
     const toStartX = timeline.xFor(to.start) - scrollLeft;
     const toEndX = timeline.xFor(to.end) + timeline.dayWidth - scrollLeft;
-    const fromY = fi * ROW_HEIGHT - scrollTop + ROW_HEIGHT / 2;
-    const toY = ti * ROW_HEIGHT - scrollTop + ROW_HEIGHT / 2;
+    const fromY = fi * rh - scrollTop + rh / 2;
+    const toY = ti * rh - scrollTop + rh / 2;
 
     let sx = fromEndX;
     let tx = toStartX;
