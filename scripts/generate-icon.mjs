@@ -169,15 +169,16 @@ function renderIcon(size) {
 }
 
 // ── Generate and save ─────────────────────────────────────────────────────────
-const SIZES = [16, 32, 48, 256];
-const entries = SIZES.map(size => ({ size, png: encodePNG(size, renderIcon(size)) }));
+const ICO_SIZES = [16, 32, 48, 256];
+const entries = ICO_SIZES.map(size => ({ size, png: encodePNG(size, renderIcon(size)) }));
 
 const ico = buildICO(entries);
 fs.writeFileSync(path.join(BUILD, 'icon.ico'), ico);
-console.log('✓ build/icon.ico  (' + Math.round(ico.length / 1024) + ' KB, sizes: ' + SIZES.join(', ') + ')');
+console.log('✓ build/icon.ico  (' + Math.round(ico.length / 1024) + ' KB, sizes: ' + ICO_SIZES.join(', ') + ')');
 
-const png256 = entries.find(e => e.size === 256)?.png;
-fs.writeFileSync(path.join(BUILD, 'icon.png'), png256);
-console.log('✓ build/icon.png  (256×256)');
+// 1024×1024 PNG for macOS (high-resolution Dock icon; electron-builder auto-converts to .icns)
+const png1024 = encodePNG(1024, renderIcon(1024));
+fs.writeFileSync(path.join(BUILD, 'icon.png'), png1024);
+console.log('✓ build/icon.png  (1024×1024)');
 
 console.log('\nDone — rebuild with  npm run dist  to apply the new icon.');

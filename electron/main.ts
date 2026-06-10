@@ -290,6 +290,12 @@ function buildKoreanMenu(): void {
 app.whenReady().then(() => {
   createWindow();
   buildKoreanMenu();
+  // macOS: BrowserWindow.icon does not affect the Dock — must set explicitly.
+  if (process.platform === 'darwin') {
+    try {
+      app.dock.setIcon(path.join(__dirname, '..', 'build', 'icon.png'));
+    } catch { /* dock may not be available in some environments */ }
+  }
 });
 
 app.on('window-all-closed', () => {

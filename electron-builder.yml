@@ -29,6 +29,7 @@ nsis:
 portable:
   artifactName: ${productName}-Portable-${version}.${ext}
 mac:
+  icon: build/icon.png
   target:
     - dmg
   category: public.app-category.productivity
