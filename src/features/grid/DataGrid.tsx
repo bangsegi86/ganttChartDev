@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, Lock } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, Lock, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -156,6 +156,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const removeTasksFromGroup = useProjectStore((s) => s.removeTasksFromGroup);
   const viewGroups         = useProjectStore((s) => s.derived.project.viewGroups);
   const resources          = useProjectStore((s) => s.derived.project.resources);
+  const gridCollapsed      = useProjectStore((s) => s.view.gridCollapsed);
+  const toggleGridCollapse = useProjectStore((s) => s.toggleGridCollapse);
 
   // --- state ---
   const [columns, setColumns]       = useState(DEFAULT_COLUMNS);
@@ -175,6 +177,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   // --- refs ---
   const containerRef         = useRef<HTMLDivElement>(null);
   const scrollerRef          = useRef<HTMLDivElement>(null);
+  const headerRef            = useRef<HTMLDivElement>(null);
   const isSyncingRef         = useRef(false);
   const isUserScrollingRef   = useRef(false);
   const clearUserScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -601,6 +604,24 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   // Render
   // ---------------------------------------------------------------------------
 
+  // Collapsed: show a thin strip with only the expand button
+  if (gridCollapsed) {
+    return (
+      <div
+        className="flex h-full shrink-0 flex-col items-center border-r border-border bg-surface"
+        style={{ width: 24 }}
+      >
+        <button
+          onClick={toggleGridCollapse}
+          className="flex h-7 w-full items-center justify-center text-content-muted transition-colors hover:bg-surface-2 hover:text-content"
+          title="작업 영역 펼치기"
+        >
+          <PanelLeftOpen size={14} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -634,29 +655,40 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         >
           <ChevronsUp size={13} />
         </button>
+        <button
+          onClick={toggleGridCollapse}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-content-muted transition-colors hover:bg-surface-2 hover:text-content"
+          title="작업 영역 접기"
+          aria-label="작업 영역 접기"
+        >
+          <PanelLeftClose size={13} />
+        </button>
       </div>
 
-      {/* Column headers */}
+      {/* Column headers — overflow:hidden + scrollLeft synced to body to fix misalignment */}
       <div
+        ref={headerRef}
         className="flex shrink-0 border-b border-border bg-surface-2 text-2xs font-semibold text-content-muted"
-        style={{ height: HEADER_HEIGHT - 28, minWidth: totalWidth }}
+        style={{ height: HEADER_HEIGHT - 28, overflow: 'hidden' }}
       >
-        {columns.map((col) => (
-          <div
-            key={col.key}
-            className="relative flex items-center border-r border-border px-2"
-            style={{ width: col.width, justifyContent: col.align === 'right' ? 'flex-end' : 'flex-start' }}
-            role="columnheader"
-          >
-            <span className="truncate">{col.label}</span>
-            <span
-              className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-accent"
-              onMouseDown={(e) => startColumnResize(col.key, e)}
-              role="separator"
-              aria-orientation="vertical"
-            />
-          </div>
-        ))}
+        <div className="flex" style={{ minWidth: totalWidth }}>
+          {columns.map((col) => (
+            <div
+              key={col.key}
+              className="relative flex shrink-0 items-center border-r border-border px-2"
+              style={{ width: col.width, justifyContent: col.align === 'right' ? 'flex-end' : 'flex-start' }}
+              role="columnheader"
+            >
+              <span className="truncate">{col.label}</span>
+              <span
+                className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-accent"
+                onMouseDown={(e) => startColumnResize(col.key, e)}
+                role="separator"
+                aria-orientation="vertical"
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Virtualised rows */}
@@ -669,6 +701,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           if (clearUserScrollTimer.current) clearTimeout(clearUserScrollTimer.current);
           clearUserScrollTimer.current = setTimeout(() => { isUserScrollingRef.current = false; }, 150);
           onScrollTopChange(e.currentTarget.scrollTop);
+          // Keep header perfectly in sync with horizontal scroll
+          if (headerRef.current) headerRef.current.scrollLeft = e.currentTarget.scrollLeft;
         }}
         role="grid"
         aria-rowcount={rows.length}

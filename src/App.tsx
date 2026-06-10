@@ -38,6 +38,7 @@ export default function App() {
   useKeyboardShortcuts();
 
   const gridWidth = useProjectStore((s) => s.view.gridWidth);
+  const gridCollapsed = useProjectStore((s) => s.view.gridCollapsed);
   const activeView = useProjectStore((s) => s.view.activeView);
   const loadProject = useProjectStore((s) => s.loadProject);
 
@@ -140,7 +141,7 @@ export default function App() {
         ) : (
           <>
             <DataGrid width={gridWidth} scrollTop={scrollTop} onScrollTopChange={setScrollTop} />
-            <SplitDivider />
+            {!gridCollapsed && <SplitDivider />}
             <GanttChart scrollTop={scrollTop} onScrollTopChange={setScrollTop} />
           </>
         )}

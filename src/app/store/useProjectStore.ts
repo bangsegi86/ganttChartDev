@@ -35,6 +35,8 @@ interface ViewState {
   showTodayLine: boolean;
   /** Left grid pane width in pixels (resizable split). */
   gridWidth: number;
+  /** Whether the left grid panel is collapsed to a thin strip. */
+  gridCollapsed: boolean;
   activeView: ActiveView;
   /** Display filter: show all tasks, a view group, or a focused selection. */
   filterMode: FilterMode;
@@ -189,6 +191,7 @@ interface ProjectStore {
   toggleBaseline: () => void;
   toggleTodayLine: () => void;
   setGridWidth: (width: number) => void;
+  toggleGridCollapse: () => void;
   setActiveView: (view: ActiveView) => void;
   /** Show all tasks, a specific view group, the current selection, or tasks by assignee. */
   setViewFilter: (mode: FilterMode, groupId?: string | null, assigneeIds?: string[]) => void;
@@ -303,6 +306,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       zoom: 'day',
       showCriticalPath: true,
       showBaseline: false,
+      gridCollapsed: false,
       showTodayLine: true,
       gridWidth: 460,
       activeView: 'gantt',
@@ -1164,6 +1168,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
     setGridWidth(width) {
       set((s) => ({ view: { ...s.view, gridWidth: Math.max(240, Math.min(900, width)) } }));
+    },
+    toggleGridCollapse() {
+      set((s) => ({ view: { ...s.view, gridCollapsed: !s.view.gridCollapsed } }));
     },
     setActiveView(activeView) {
       set((s) => ({ view: { ...s.view, activeView } }));
