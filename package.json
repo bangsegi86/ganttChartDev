@@ -14,8 +14,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win"
+    "icon": "node scripts/generate-icon.mjs",
+    "dist": "npm run icon && npm run build && electron-builder",
+    "dist:win": "npm run icon && npm run build && electron-builder --win"
   },
   "dependencies": {
     "clsx": "^2.1.1",
