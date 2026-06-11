@@ -176,7 +176,10 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       line2 = `${sign}${drag.deltaDays}일`;
     }
 
-    el.innerHTML = `<span>${line1}</span><span class="opacity-60 ml-2">${line2}</span>`;
+    el.replaceChildren(
+      Object.assign(document.createElement('span'), { textContent: line1 }),
+      Object.assign(document.createElement('span'), { textContent: line2, className: 'opacity-60 ml-2' }),
+    );
     el.style.left = `${drag.cursorX + 16}px`;
     el.style.top = `${Math.max(4, drag.cursorY - 42)}px`;
     el.style.display = 'flex';
@@ -622,6 +625,15 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     },
     [draw, onWindowMove, hideTooltip, showToast, setDomCursor],
   );
+
+  // Safety cleanup: remove any lingering global drag listeners if the component
+  // unmounts mid-drag (e.g. view switch while dragging).
+  useEffect(() => {
+    return () => {
+      window.removeEventListener('mousemove', onWindowMove);
+      window.removeEventListener('mouseup', onWindowUp);
+    };
+  }, [onWindowMove, onWindowUp]);
 
   const onDoubleClick = (e: React.MouseEvent) => {
     const { bar } = hitTest(e.clientX, e.clientY);

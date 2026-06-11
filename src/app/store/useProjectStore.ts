@@ -57,6 +57,8 @@ interface ViewState {
    * the field back to null.
    */
   ganttScrollTo: string | null;
+  /** App-level notification toast. Cleared automatically by the App shell after display. */
+  appToast: { msg: string; type: 'success' | 'error'; id: number } | null;
 }
 
 interface ClipboardState {
@@ -220,6 +222,9 @@ interface ProjectStore {
   scrollGanttToDate: (date: string) => void;
   /** Called by GanttChart after it has consumed a scrollGanttToDate request. */
   clearGanttScroll: () => void;
+  /** Show an app-level toast notification. Type defaults to 'error'. */
+  showAppToast: (msg: string, type?: 'success' | 'error') => void;
+  clearAppToast: () => void;
 }
 
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -328,6 +333,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       dayWidthScale: 1.0,
       rowHeight: DEFAULT_ROW_HEIGHT,
       ganttScrollTo: null,
+      appToast: null,
     },
 
     newProject(name) {
@@ -355,34 +361,46 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     async saveProject() {
-      commit((d) => { d.updatedAt = new Date().toISOString(); });
-      const project = get().derived.project;
-      const json = JSON.stringify(project, null, 2);
-      const fp = get().currentFilePath;
-      if (fp) {
-        const res = await bridge().project.saveToPath(fp, json);
-        if (res.ok) {
-          await autosaveRepository.clear();
-          set({ dirty: false });
+      try {
+        commit((d) => { d.updatedAt = new Date().toISOString(); });
+        const project = get().derived.project;
+        const json = JSON.stringify(project, null, 2);
+        const fp = get().currentFilePath;
+        if (fp) {
+          const res = await bridge().project.saveToPath(fp, json);
+          if (res.ok) {
+            await autosaveRepository.clear();
+            set({ dirty: false });
+            get().showAppToast('저장되었습니다.', 'success');
+          } else {
+            get().showAppToast('저장에 실패했습니다. 디스크 공간 또는 파일 권한을 확인하세요.', 'error');
+          }
+        } else {
+          const res = await bridge().project.exportFile(project.name || '간트프로젝트', json);
+          if (res.ok) {
+            await autosaveRepository.clear();
+            set({ dirty: false, currentFilePath: res.path ?? null });
+            get().showAppToast('저장되었습니다.', 'success');
+          }
         }
-      } else {
-        // 저장 경로 없음 → 파일 탐색기 열기
-        const res = await bridge().project.exportFile(project.name || '간트프로젝트', json);
-        if (res.ok) {
-          await autosaveRepository.clear();
-          set({ dirty: false, currentFilePath: res.path ?? null });
-        }
+      } catch {
+        get().showAppToast('저장 중 오류가 발생했습니다.', 'error');
       }
     },
 
     async saveAsProject() {
-      commit((d) => { d.updatedAt = new Date().toISOString(); });
-      const project = get().derived.project;
-      const json = JSON.stringify(project, null, 2);
-      const res = await bridge().project.exportFile(project.name || '간트프로젝트', json);
-      if (res.ok) {
-        await autosaveRepository.clear();
-        set({ dirty: false, currentFilePath: res.path ?? null });
+      try {
+        commit((d) => { d.updatedAt = new Date().toISOString(); });
+        const project = get().derived.project;
+        const json = JSON.stringify(project, null, 2);
+        const res = await bridge().project.exportFile(project.name || '간트프로젝트', json);
+        if (res.ok) {
+          await autosaveRepository.clear();
+          set({ dirty: false, currentFilePath: res.path ?? null });
+          get().showAppToast('저장되었습니다.', 'success');
+        }
+      } catch {
+        get().showAppToast('저장 중 오류가 발생했습니다.', 'error');
       }
     },
 
@@ -397,14 +415,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     async shareImport() {
-      const result = await bridge().project.importFile();
-      if (!result.ok || !result.json) return;
       try {
+        const result = await bridge().project.importFile();
+        if (!result.ok || !result.json) return;
         const project = JSON.parse(result.json) as Project;
+        if (!project || typeof project !== 'object' || !Array.isArray(project.tasks)) {
+          get().showAppToast('파일 형식이 올바르지 않습니다. 프로젝트 파일인지 확인하세요.', 'error');
+          return;
+        }
         get().loadProject(project);
         if (result.path) set({ currentFilePath: result.path });
       } catch {
-        // Silently ignore malformed JSON
+        get().showAppToast('파일을 불러올 수 없습니다. 손상된 파일이거나 지원하지 않는 형식입니다.', 'error');
       }
     },
 
@@ -1332,6 +1354,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     clearGanttScroll() {
       set((s) => ({ view: { ...s.view, ganttScrollTo: null } }));
+    },
+
+    showAppToast(msg, type = 'error') {
+      set((s) => ({ view: { ...s.view, appToast: { msg, type, id: Date.now() } } }));
+    },
+
+    clearAppToast() {
+      set((s) => ({ view: { ...s.view, appToast: null } }));
     },
   };
 });

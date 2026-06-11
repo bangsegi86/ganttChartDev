@@ -31,7 +31,10 @@ export function StatusBar() {
         <span title="프로젝트 생성일">생성 {fmt(project.createdAt)}</span>
         <span title="마지막 저장 시각">저장 {fmt(project.updatedAt)}</span>
         {cyclic > 0 ? (
-          <span className="flex items-center gap-1 text-critical">
+          <span
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-critical bg-critical/10 border border-critical/30"
+            title="순환 의존성이 있으면 일정 계산이 올바르지 않을 수 있습니다. 의존성 탭에서 확인하세요."
+          >
             <AlertTriangle size={12} /> 순환 의존성 {cyclic}개
           </span>
         ) : (
@@ -39,7 +42,7 @@ export function StatusBar() {
             <CircleCheck size={12} /> 정상
           </span>
         )}
-        <span>{dirty ? '저장되지 않음' : '저장됨'}</span>
+        <span className={dirty ? 'text-amber-400' : ''}>{dirty ? '● 저장되지 않음' : '저장됨'}</span>
       </div>
     </div>
   );

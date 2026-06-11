@@ -192,8 +192,14 @@ ipcMain.handle('project:import-file', async () => {
 });
 
 ipcMain.handle('project:save-to-path', async (_e, filePath: string, json: string) => {
-  await fs.writeFile(filePath, json, 'utf-8');
-  return { ok: true, path: filePath };
+  try {
+    const tmp = `${filePath}.tmp`;
+    await fs.writeFile(tmp, json, 'utf-8');
+    await fs.rename(tmp, filePath);
+    return { ok: true, path: filePath };
+  } catch (err) {
+    return { ok: false, path: null, error: String(err) };
+  }
 });
 
 function sanitize(id: string): string {
@@ -284,6 +290,29 @@ function buildKoreanMenu(): void {
         ]
       : []),
     { label: '파일', submenu: fileSubmenu },
+    {
+      label: '도움말',
+      submenu: [
+        {
+          label: '키보드 단축키',
+          accelerator: 'CmdOrCtrl+/',
+          click: () => send('menu:show-shortcuts'),
+        },
+        { type: 'separator' as const },
+        {
+          label: '스마트 간트 정보',
+          click: () => {
+            dialog.showMessageBox(mainWindow!, {
+              type: 'info',
+              title: '스마트 간트 정보',
+              message: '스마트 간트',
+              detail: `버전: ${app.getVersion()}\n오프라인 프로젝트 일정 관리 도구\n\n© 2025 Smart Gantt`,
+              buttons: ['확인'],
+            });
+          },
+        },
+      ],
+    },
     {
       label: '편집',
       submenu: [

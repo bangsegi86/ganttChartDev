@@ -27,6 +27,7 @@ type MenuAction =
   | 'menu:zoom-reset'
   | 'menu:share-export'
   | 'menu:share-import'
+  | 'menu:show-shortcuts'
   | 'menu:close-requested';
 
 const bridge = {
@@ -48,6 +49,7 @@ const bridge = {
         'menu:zoom-reset',
         'menu:share-export',
         'menu:share-import',
+        'menu:show-shortcuts',
         'menu:close-requested',
       ];
       const listeners = actions.map((ch) => {

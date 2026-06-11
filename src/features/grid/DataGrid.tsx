@@ -710,6 +710,12 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         role="grid"
         aria-rowcount={rows.length}
       >
+        {rows.length === 0 && (
+          <div className="flex flex-col items-center justify-center gap-2 py-16 text-content-muted">
+            <span className="text-2xs">작업이 없습니다</span>
+            <span className="text-2xs opacity-60">Enter 키 또는 + 버튼으로 작업을 추가하세요</span>
+          </div>
+        )}
         <div style={{ height: rows.length * rowHeight + SCROLL_BOTTOM_PADDING, minWidth: totalWidth, position: 'relative' }}>
           {visible.map((row, visIdx) => {
             const rowIdx      = first + visIdx;
