@@ -1,6 +1,6 @@
 import { createPortal } from 'react-dom';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Ban, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, Lock, PanelLeftClose, PanelLeftOpen, RotateCcw } from 'lucide-react';
+import { Ban, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, ListPlus, Lock, PanelLeftClose, PanelLeftOpen, RotateCcw } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -711,9 +711,18 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         aria-rowcount={rows.length}
       >
         {rows.length === 0 && (
-          <div className="flex flex-col items-center justify-center gap-2 py-16 text-content-muted">
-            <span className="text-2xs">작업이 없습니다</span>
-            <span className="text-2xs opacity-60">Enter 키 또는 + 버튼으로 작업을 추가하세요</span>
+          <div className="flex flex-col items-center justify-center gap-3 py-20 text-content-muted select-none">
+            <ListPlus size={32} className="opacity-25" />
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-xs font-medium text-content-muted">아직 작업이 없습니다</span>
+              <span className="text-2xs opacity-60">Enter 키 또는 아래 버튼으로 첫 번째 작업을 추가하세요</span>
+            </div>
+            <button
+              onClick={() => addTask()}
+              className="mt-1 flex items-center gap-1.5 rounded-md border border-dashed border-accent/50 bg-accent/5 px-4 py-2 text-xs font-medium text-accent transition-colors hover:bg-accent/10"
+            >
+              + 작업 추가
+            </button>
           </div>
         )}
         <div style={{ height: rows.length * rowHeight + SCROLL_BOTTOM_PADDING, minWidth: totalWidth, position: 'relative' }}>

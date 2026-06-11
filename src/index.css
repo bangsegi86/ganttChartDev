@@ -79,6 +79,15 @@ body {
   outline-offset: 1px;
 }
 
+/* Hide scrollbar while keeping scroll functionality (toolbar overflow). */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Modal / dialog entrance animation. */
 @keyframes dialog-in {
   from { opacity: 0; transform: scale(0.97) translateY(-6px); }

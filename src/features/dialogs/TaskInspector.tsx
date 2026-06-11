@@ -169,16 +169,17 @@ export function TaskInspector() {
         </div>
 
         {/* 진척률 */}
-        <Field label="진척률">
+        <Field label={`진척률 — ${task.progress}%`}>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              aria-label="1% 감소"
-              onClick={() => updateTask(task.id, { progress: Math.max(0, task.progress - 1) })}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border bg-surface-2 text-content-muted hover:bg-surface-3 hover:text-content select-none"
-            >
-              −
-            </button>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={task.progress}
+              onChange={(e) => updateTask(task.id, { progress: Number(e.target.value) })}
+              className="flex-1 accent-[rgb(var(--color-accent))]"
+            />
             <input
               type="number"
               min={0}
@@ -190,25 +191,6 @@ export function TaskInspector() {
               }}
               className="input w-16 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
-            <button
-              type="button"
-              aria-label="1% 증가"
-              onClick={() => updateTask(task.id, { progress: Math.min(100, task.progress + 1) })}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border bg-surface-2 text-content-muted hover:bg-surface-3 hover:text-content select-none"
-            >
-              +
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={task.progress}
-              onChange={(e) => updateTask(task.id, { progress: Number(e.target.value) })}
-              className="flex-1 accent-[rgb(var(--color-accent))]"
-            />
-            <span className="w-9 shrink-0 text-right text-2xs text-content-muted">
-              {task.progress}%
-            </span>
           </div>
         </Field>
 
@@ -365,22 +347,29 @@ export function TaskInspector() {
           />
         </Field>
 
-        {/* 스케줄 정보 */}
+        {/* 스케줄 계산 정보 */}
         {schedule && (
-          <div className="grid grid-cols-3 gap-2 rounded border border-border bg-surface-2 p-2 text-center text-2xs text-content-muted">
-            <div>
-              <div className="text-sm text-content">{schedule.totalFloat}일</div>
-              전체 여유
-            </div>
-            <div>
-              <div className="text-sm text-content">{schedule.freeFloat}일</div>
-              독립 여유
-            </div>
-            <div>
-              <div className={`text-sm ${schedule.isCritical ? 'text-critical' : 'text-content'}`}>
-                {schedule.isCritical ? '예' : '아니오'}
+          <div className="rounded border border-border bg-surface-2 p-3">
+            <div className="mb-2 text-2xs font-semibold uppercase tracking-wider text-content-muted">일정 계산 결과</div>
+            <div className="grid grid-cols-3 gap-2 text-center text-2xs">
+              <div title="이 작업이 지연될 수 있는 최대 일수 (전체 프로젝트 지연 없이)">
+                <div className={`mb-0.5 text-sm font-semibold ${schedule.totalFloat === 0 ? 'text-critical' : 'text-content'}`}>
+                  {schedule.totalFloat}일
+                </div>
+                <div className="text-content-muted">전체 여유</div>
               </div>
-              크리티컬 경로
+              <div title="후속 작업에 영향 없이 지연할 수 있는 최대 일수">
+                <div className={`mb-0.5 text-sm font-semibold ${schedule.freeFloat === 0 ? 'text-amber-400' : 'text-content'}`}>
+                  {schedule.freeFloat}일
+                </div>
+                <div className="text-content-muted">독립 여유</div>
+              </div>
+              <div title="크리티컬 패스: 이 작업이 지연되면 전체 프로젝트가 지연됩니다">
+                <div className={`mb-0.5 text-sm font-semibold ${schedule.isCritical ? 'text-critical' : 'text-success'}`}>
+                  {schedule.isCritical ? '위험' : '안전'}
+                </div>
+                <div className="text-content-muted">크리티컬</div>
+              </div>
             </div>
           </div>
         )}
@@ -391,8 +380,8 @@ export function TaskInspector() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="block">
-      <span className="mb-1 block text-2xs font-semibold text-content-muted">{label}</span>
+    <div>
+      <span className="mb-1.5 block text-xs font-medium text-content-muted">{label}</span>
       {children}
     </div>
   );

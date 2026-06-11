@@ -2,7 +2,7 @@ import {
   ArrowDown,
   ArrowUp,
   Ban,
-  CalendarDays,
+  CalendarRange,
   ChevronDown,
   Copy,
   Download,
@@ -25,13 +25,14 @@ import {
   RotateCcw,
   Route,
   Save,
+  Settings2,
   Sun,
   Trash2,
   Undo2,
   Users,
   CalendarClock,
-  ChevronLeft as ZoomOut,
-  ChevronRight as ZoomIn,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -147,7 +148,7 @@ export function Toolbar({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-border bg-surface-2 px-2 py-1.5">
+    <div className="flex min-w-0 items-center gap-1 border-b border-border bg-surface-2 px-2 py-1.5 overflow-x-auto scrollbar-none">
       {/* Project name — click pencil to rename */}
       <div className="mr-1 flex items-center gap-1">
         {editingName ? (
@@ -248,7 +249,7 @@ export function Toolbar({
       <Divider />
 
       <Group>
-        <Button size="sm" onClick={() => zoomBy(-1)} title="축소 (-)">
+        <Button size="sm" onClick={() => zoomBy(-1)} title="차트 축소 (Ctrl+-)">
           <ZoomOut size={14} />
         </Button>
         <select
@@ -265,7 +266,7 @@ export function Toolbar({
               </option>
             ))}
         </select>
-        <Button size="sm" onClick={() => zoomBy(1)} title="확대 (+)">
+        <Button size="sm" onClick={() => zoomBy(1)} title="차트 확대 (Ctrl+=)">
           <ZoomIn size={14} />
         </Button>
       </Group>
@@ -273,8 +274,8 @@ export function Toolbar({
       <Divider />
 
       <Group>
-        <Button size="sm" active={view.showCriticalPath} onClick={toggleCritical} title="크리티컬 패스">
-          <Route size={14} /> CP
+        <Button size="sm" active={view.showCriticalPath} onClick={toggleCritical} title="크리티컬 패스 — 가장 긴 경로(지연 불가) 강조">
+          <Route size={14} /> 크리티컬
         </Button>
         <Button size="sm" active={view.showTodayLine} onClick={toggleTodayLine} title="오늘 선 표시/숨기기">
           <CalendarClock size={14} /> 오늘
@@ -343,48 +344,39 @@ export function Toolbar({
 
       <Group>
         <Button size="sm" onClick={onOpenResources} title="담당자 관리">
-          <Users size={14} />
+          <Users size={14} /> 담당자
         </Button>
-        <Button size="sm" onClick={onOpenHolidays} title="공휴일 관리">
-          <CalendarDays size={14} />
+        <Button size="sm" onClick={onOpenHolidays} title="공휴일 설정">
+          <CalendarRange size={14} /> 공휴일
         </Button>
-        <Button size="sm" onClick={onOpenCalendar} title="달력 설정">
-          <CalendarDays size={14} /> 설정
+        <Button size="sm" onClick={onOpenCalendar} title="근무 달력 설정">
+          <Settings2 size={14} /> 달력
         </Button>
       </Group>
 
-      <div className="ml-auto flex items-center gap-1">
-        <Button size="sm" onClick={() => void exportNow('excel')} title="엑셀 내보내기">
-          <FileSpreadsheet size={14} />
-        </Button>
-        <Button size="sm" onClick={() => void exportNow('html')} title="HTML 내보내기 (인터랙티브)">
-          <Globe size={14} />
-        </Button>
-        <Button size="sm" onClick={() => void exportNow('png')} title="PNG 내보내기">
-          <Image size={14} />
-        </Button>
-        <Button size="sm" onClick={() => void exportNow('pdf')} title="PDF 내보내기">
-          <FileText size={14} />
-        </Button>
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {/* Export dropdown */}
+        <ExportDropdown onExport={exportNow} onShare={() => void shareExport()} />
         <Divider />
-        <Button size="sm" onClick={() => void shareExport()} title="다른 사람과 공유 — 사본을 파일로 내보내기 (.smgantt) (Ctrl+Shift+E)">
-          <Download size={14} /> 공유
-        </Button>
-        <Divider />
-        <Button size="sm" onClick={() => useProjectStore.getState().newProject()} title="새 프로젝트">
+        <Button size="sm" onClick={() => useProjectStore.getState().newProject()} title="새 프로젝트 (Ctrl+N)">
           <FilePlus2 size={14} />
         </Button>
-        <Button size="sm" onClick={() => void shareImport()} title="파일 열기 (.smgantt) — 탐색기에서 파일 선택 (Ctrl+O)">
+        <Button size="sm" onClick={() => void shareImport()} title="파일 열기 (Ctrl+O)">
           <FolderOpen size={14} /> 열기
         </Button>
-        <Button size="sm" variant={dirty ? 'accent' : 'default'} onClick={() => void saveProject()}
-          title={currentFilePath ? `저장 — ${currentFilePath} (Ctrl+S)` : '저장 — 탐색기에서 위치 선택 (Ctrl+S)'}>
-          <Save size={14} /> {dirty ? '저장*' : '저장'}
+        <Button
+          size="sm"
+          variant={dirty ? 'accent' : 'default'}
+          onClick={() => void saveProject()}
+          title={currentFilePath ? `저장 — ${currentFilePath} (Ctrl+S)` : '저장 (Ctrl+S)'}
+        >
+          <Save size={14} /> {dirty ? '저장 ●' : '저장'}
         </Button>
-        <Button size="sm" onClick={() => void saveAsProject()} title="다른 이름으로 저장 — 탐색기에서 위치 선택 (Ctrl+Shift+S)">
-          <FolderInput size={14} /> 다른 이름
+        <Button size="sm" onClick={() => void saveAsProject()} title="다른 이름으로 저장 (Ctrl+Shift+S)">
+          <FolderInput size={14} />
         </Button>
-        <Button size="icon" variant="ghost" onClick={toggleTheme} title="테마 전환">
+        <Divider />
+        <Button size="icon" variant="ghost" onClick={toggleTheme} title={view.theme === 'dark' ? '라이트 테마로 전환' : '다크 테마로 전환'}>
           {view.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </Button>
       </div>
@@ -498,6 +490,90 @@ function AssigneeFilterButton() {
               </button>
             </div>
           )}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Export dropdown
+// ---------------------------------------------------------------------------
+
+interface ExportDropdownProps {
+  onExport: (kind: 'excel' | 'png' | 'pdf' | 'html') => Promise<void>;
+  onShare: () => void;
+}
+
+function ExportDropdown({ onExport, onShare }: ExportDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos]   = useState({ top: 0, left: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const openMenu = () => {
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (rect) setPos({ top: rect.bottom + 4, left: rect.right });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const tid = setTimeout(() => window.addEventListener('mousedown', close), 50);
+    return () => { clearTimeout(tid); window.removeEventListener('mousedown', close); };
+  }, [open]);
+
+  const run = async (fn: () => Promise<void>) => {
+    setOpen(false);
+    await fn();
+  };
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={open ? () => setOpen(false) : openMenu}
+        className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface-2 px-2 text-xs font-medium text-content transition-all hover:bg-surface-3 select-none"
+        title="내보내기"
+      >
+        <Download size={14} />
+        <span>내보내기</span>
+        <ChevronDown size={11} className={`transition-transform text-content-muted ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && createPortal(
+        <div
+          style={{ position: 'fixed', top: pos.top, left: pos.left, transform: 'translateX(-100%)', zIndex: 9999 }}
+          className="min-w-[180px] rounded-md border border-border bg-surface shadow-xl text-xs py-1"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-1.5 text-2xs font-semibold uppercase tracking-wider text-content-muted border-b border-border mb-1">
+            내보내기
+          </div>
+          {([
+            { kind: 'excel' as const, icon: <FileSpreadsheet size={13} />, label: 'Excel (.xlsx)' },
+            { kind: 'html'  as const, icon: <Globe size={13} />,          label: 'HTML (인터랙티브)' },
+            { kind: 'png'   as const, icon: <Image size={13} />,          label: 'PNG 이미지' },
+            { kind: 'pdf'   as const, icon: <FileText size={13} />,       label: 'PDF 문서' },
+          ]).map(({ kind, icon, label }) => (
+            <button
+              key={kind}
+              onClick={() => void run(() => onExport(kind))}
+              className="flex w-full items-center gap-2.5 px-3 py-1.5 hover:bg-surface-2 text-content"
+            >
+              <span className="text-content-muted">{icon}</span>
+              {label}
+            </button>
+          ))}
+          <div className="my-1 border-t border-border" />
+          <button
+            onClick={() => { setOpen(false); onShare(); }}
+            className="flex w-full items-center gap-2.5 px-3 py-1.5 hover:bg-surface-2 text-content"
+          >
+            <span className="text-content-muted"><Download size={13} /></span>
+            공유 파일 (.smgantt)
+          </button>
         </div>,
         document.body,
       )}
