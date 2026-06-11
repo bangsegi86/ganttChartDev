@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlignJustify, Minus, Plus } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
@@ -91,8 +92,11 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const linkSourceId = useProjectStore((s) => s.linkSourceId);
   const scaleDayWidth = useProjectStore((s) => s.scaleDayWidth);
   const setDayWidthScale = useProjectStore((s) => s.setDayWidthScale);
+  const duplicateTask  = useProjectStore((s) => s.duplicateTask);
   const rowHeight = useProjectStore((s) => s.view.rowHeight);
   const setRowHeight = useProjectStore((s) => s.setRowHeight);
+
+  const [ganttMenu, setGanttMenu] = useState<{ x: number; y: number; taskId: string } | null>(null);
   const ganttScrollTo = useProjectStore((s) => s.view.ganttScrollTo);
   const clearGanttScroll = useProjectStore((s) => s.clearGanttScroll);
 
@@ -210,10 +214,23 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     const drag = dragRef.current;
     let renderRows = rows;
     if (drag.mode && drag.taskId && drag.deltaDays !== 0) {
-      renderRows = rows.map((r) => {
-        if (r.task.id !== drag.taskId) return r;
-        return { ...r, task: applyDragPreview(r.task, drag) };
-      });
+      // For summary bars (has children), preview-offset the whole subtree.
+      const hasChildren = rows.some((r) => r.task.parentId === drag.taskId);
+      if (drag.mode === 'move' && hasChildren) {
+        const subtreeIds = new Set<string>();
+        const collect = (pid: string): void => {
+          subtreeIds.add(pid);
+          for (const r of rows) { if (r.task.parentId === pid) collect(r.task.id); }
+        };
+        collect(drag.taskId);
+        renderRows = rows.map((r) =>
+          subtreeIds.has(r.task.id) ? { ...r, task: applyDragPreview(r.task, drag) } : r,
+        );
+      } else {
+        renderRows = rows.map((r) =>
+          r.task.id === drag.taskId ? { ...r, task: applyDragPreview(r.task, drag) } : r,
+        );
+      }
     }
     const isMoving = (drag.mode === 'move' || drag.mode === 'resize-start' || drag.mode === 'resize-end')
       && drag.taskId != null && drag.deltaDays !== 0;
@@ -440,14 +457,10 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     }
 
     if (!bar) {
-      // Empty area → pan (손가락) cursor by default.
       setDomCursor('grab');
-    } else if (bar.isSummary) {
-      setDomCursor('default');
     } else if (edge === 'resize-start' || edge === 'resize-end') {
       setDomCursor('ew-resize');
     } else {
-      // Over a movable bar → move cursor (pan disabled here).
       setDomCursor('move');
     }
   }, [setDomCursor]);
@@ -487,8 +500,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     selectedDepIdRef.current = null;
     store.selectTask(bar.taskId, e.ctrlKey || e.metaKey);
 
-    // Summary bars can only be selected; their dates are auto-calculated.
-    if (bar.isSummary && !e.altKey) return;
+    // Summary bars: only allow 'move' (group drag) and 'link'; no resize handles.
+    if (bar.isSummary && !e.altKey && edge !== 'move') return;
 
     const mode: DragMode = e.altKey ? 'link' : edge;
     if (!mode) return;
@@ -579,7 +592,12 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
 
       if (drag.mode && drag.taskId) {
         if (drag.mode === 'move' && drag.deltaDays !== 0) {
-          store.moveTaskBy(drag.taskId, drag.deltaDays);
+          const movedBar = barsRef.current.find((b) => b.taskId === drag.taskId);
+          if (movedBar?.isSummary) {
+            store.moveSubtreeBy(drag.taskId, drag.deltaDays);
+          } else {
+            store.moveTaskBy(drag.taskId, drag.deltaDays);
+          }
           showToast('이동됨 · Ctrl+Z로 되돌리기');
         } else if (drag.mode === 'resize-start' && drag.deltaDays !== 0) {
           store.resizeTask(drag.taskId, 'start', drag.deltaDays);
@@ -676,6 +694,14 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         onMouseMove={onMouseMoveHover}
         onMouseLeave={() => { if (barTipRef.current) barTipRef.current.style.display = 'none'; }}
         onDoubleClick={onDoubleClick}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          const { bar } = hitTest(e.clientX, e.clientY);
+          if (bar) {
+            useProjectStore.getState().selectTask(bar.taskId, false);
+            setGanttMenu({ x: e.clientX, y: e.clientY, taskId: bar.taskId });
+          }
+        }}
         role="application"
         aria-label="간트 타임라인"
       >
@@ -791,6 +817,65 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
           transition: 'opacity 0.2s ease, transform 0.2s ease',
         }}
       />
+
+      {/* Gantt bar context menu */}
+      {ganttMenu && createPortal(
+        <GanttContextMenu
+          menu={ganttMenu}
+          onClose={() => setGanttMenu(null)}
+          onDuplicate={(id) => { duplicateTask(id); setGanttMenu(null); }}
+        />,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GanttContextMenu
+// ---------------------------------------------------------------------------
+
+function GanttContextMenu({
+  menu, onClose, onDuplicate,
+}: {
+  menu: { x: number; y: number; taskId: string };
+  onClose: () => void;
+  onDuplicate: (id: string) => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: menu.y, left: menu.x });
+
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const MARGIN = 6;
+    setPos({
+      top:  menu.y + height + MARGIN > window.innerHeight ? Math.max(MARGIN, menu.y - height) : menu.y,
+      left: menu.x + width  + MARGIN > window.innerWidth  ? Math.max(MARGIN, menu.x - width)  : menu.x,
+    });
+  }, [menu.x, menu.y]);
+
+  useEffect(() => {
+    const close = () => onClose();
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', close);
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', close); };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
+      className="min-w-[160px] rounded-md border border-border bg-surface-2 py-1 shadow-xl text-xs"
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <button
+        className="w-full px-3 py-1.5 text-left hover:bg-surface-3"
+        onClick={() => onDuplicate(menu.taskId)}
+      >
+        복제
+      </button>
     </div>
   );
 }

@@ -128,6 +128,12 @@ interface ProjectStore {
    */
   moveTasks: (taskIds: TaskId[], newParentId: TaskId | null, afterId: TaskId | null) => void;
   duplicateSelected: () => void;
+  /** Deep-clone a task and its entire subtree, inserting the copy right below the original. */
+  duplicateTask: (id: TaskId) => void;
+  /** Move a task and every descendant forward/back by the given number of days. */
+  moveSubtreeBy: (id: TaskId, deltaDays: number) => void;
+  /** Wrap the currently selected tasks in a newly created parent task. */
+  groupSelectedTasks: () => void;
   copySelected: () => void;
   paste: () => void;
   /** Bulk-import tasks from clipboard TSV text (e.g. copied from Excel). */
@@ -734,6 +740,96 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         normaliseOrders(d.tasks);
       });
       set({ selectedTaskIds: new Set(newIds) });
+    },
+
+    duplicateTask(id) {
+      let newRootId: TaskId | null = null;
+      commit((d) => {
+        const snapshot = [...d.tasks];
+        const subtreeIds: TaskId[] = [];
+        const collect = (pid: TaskId): void => {
+          subtreeIds.push(pid);
+          for (const t of snapshot) {
+            if (t.parentId === pid) collect(t.id);
+          }
+        };
+        collect(id);
+        const idMap = new Map<TaskId, TaskId>();
+        for (const sid of subtreeIds) idMap.set(sid, nanoid(10) as TaskId);
+        newRootId = idMap.get(id) ?? null;
+        for (const sid of subtreeIds) {
+          const orig = snapshot.find((t) => t.id === sid);
+          if (!orig) continue;
+          const newId = idMap.get(sid)!;
+          const newParentId = sid === id ? orig.parentId : (idMap.get(orig.parentId!) ?? orig.parentId);
+          d.tasks.push({
+            ...structuredClone(orig),
+            id: newId,
+            parentId: newParentId,
+            order: sid === id ? orig.order + 0.5 : orig.order,
+          });
+        }
+        normaliseOrders(d.tasks);
+      });
+      if (newRootId) set({ selectedTaskIds: new Set([newRootId]) });
+    },
+
+    moveSubtreeBy(id, deltaDays) {
+      if (deltaDays === 0) return;
+      commit((d) => {
+        const collect = (pid: TaskId): TaskId[] => {
+          const result: TaskId[] = [pid];
+          for (const t of d.tasks) {
+            if (t.parentId === pid) result.push(...collect(t.id));
+          }
+          return result;
+        };
+        for (const tid of collect(id)) {
+          const t = d.tasks.find((x) => x.id === tid);
+          if (!t) continue;
+          t.start = addDaysISO(t.start, deltaDays);
+          t.end = addDaysISO(t.end, deltaDays);
+          t.constraint = 'snet';
+          t.constraintDate = t.start;
+          t.manuallyScheduled = false;
+        }
+      });
+    },
+
+    groupSelectedTasks() {
+      const ids = get().selectedTaskIds;
+      if (ids.size < 2) return;
+      const allTasks = get().derived.project.tasks;
+      const isDescOf = (child: TaskId, ancestor: TaskId): boolean => {
+        let p: TaskId | null = allTasks.find((t) => t.id === child)?.parentId ?? null;
+        while (p) { if (p === ancestor) return true; p = allTasks.find((t) => t.id === p!)?.parentId ?? null; }
+        return false;
+      };
+      const topLevel = allTasks
+        .filter((t) => ids.has(t.id))
+        .filter((t) => ![...ids].some((other) => other !== t.id && isDescOf(t.id, other)))
+        .sort((a, b) => a.order - b.order);
+      if (topLevel.length < 2) return;
+      const parents = new Set(topLevel.map((t) => t.parentId));
+      const commonParent: TaskId | null = parents.size === 1 ? ([...parents][0] ?? null) : null;
+      const first = topLevel[0]!;
+      const newId = nanoid(10) as TaskId;
+      commit((d) => {
+        d.tasks.push({
+          id: newId, parentId: commonParent, name: '새 그룹',
+          start: first.start, end: first.end, durationDays: 1,
+          progress: 0, priority: 'medium', assigneeIds: [], notes: '',
+          isMilestone: false, collapsed: false, constraint: 'asap',
+          constraintDate: null, manuallyScheduled: false,
+          order: first.order - 0.5, color: null, cancelled: false,
+        });
+        const selectedSet = new Set([...ids]);
+        for (const t of d.tasks) {
+          if (selectedSet.has(t.id)) t.parentId = newId;
+        }
+        normaliseOrders(d.tasks);
+      });
+      set({ selectedTaskIds: new Set([newId]), editingTaskId: newId });
     },
 
     copySelected() {

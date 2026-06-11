@@ -155,6 +155,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const addTasksToGroup    = useProjectStore((s) => s.addTasksToGroup);
   const removeTasksFromGroup = useProjectStore((s) => s.removeTasksFromGroup);
   const viewGroups         = useProjectStore((s) => s.derived.project.viewGroups);
+  const duplicateTask      = useProjectStore((s) => s.duplicateTask);
+  const groupSelectedTasks = useProjectStore((s) => s.groupSelectedTasks);
   const resources          = useProjectStore((s) => s.derived.project.resources);
   const gridCollapsed      = useProjectStore((s) => s.view.gridCollapsed);
   const toggleGridCollapse = useProjectStore((s) => s.toggleGridCollapse);
@@ -801,6 +803,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           }}
           onUncancel={(ids) => batchUpdateTasks(ids.map((id) => ({ id, patch: { cancelled: false } })))}
           onCancel={(ids) => batchUpdateTasks(ids.map((id) => ({ id, patch: { cancelled: true } })))}
+          onDuplicate={(id) => duplicateTask(id)}
+          onGroupSelected={() => groupSelectedTasks()}
         />,
         document.body,
       )}
@@ -838,6 +842,8 @@ interface ContextMenuProps {
   onGroupToggle: (groupId: string, inGroup: boolean) => void;
   onUncancel: (ids: string[]) => void;
   onCancel: (ids: string[]) => void;
+  onDuplicate: (id: string) => void;
+  onGroupSelected: (ids: string[]) => void;
 }
 
 function ContextMenu({
@@ -847,7 +853,7 @@ function ContextMenu({
   onAddBefore, onAddAfter, onToggleCollapse,
   onSortChildren, onScrollToDate, onCopyRows,
   onPasteAfter, onPasteEnd, onGroupToggle,
-  onUncancel, onCancel,
+  onUncancel, onCancel, onDuplicate, onGroupSelected,
 }: ContextMenuProps) {
   const menuRow = rows.find((r) => r.task.id === contextMenu.taskId);
   const taskId  = contextMenu.taskId;
@@ -925,6 +931,17 @@ function ContextMenu({
       {section('행 추가')}
       {item('이 행 위에 추가', () => { onAddBefore(taskId); onClose(); })}
       {item('이 행 아래 추가', () => { onAddAfter(taskId); onClose(); })}
+      {item(
+        targetIds.length > 1 ? `복제 (${targetIds.length}개)` : '복제',
+        () => {
+          if (targetIds.length > 1) {
+            for (const id of targetIds) onDuplicate(id);
+          } else {
+            onDuplicate(taskId);
+          }
+          onClose();
+        },
+      )}
 
       {divider()}
 
@@ -974,6 +991,18 @@ function ContextMenu({
       {item('맨 아래에 붙여넣기', () => { onPasteEnd(); onClose(); })}
 
       {divider()}
+
+      {/* 5a. 그룹화 */}
+      {targetIds.length >= 2 && (
+        <>
+          {section('그룹')}
+          {item(
+            `선택 항목 그룹화 (${targetIds.length}개)`,
+            () => { onGroupSelected(targetIds); onClose(); },
+          )}
+          {divider()}
+        </>
+      )}
 
       {/* 5. 일정 취소 / 복구 */}
       {section('일정 상태')}
