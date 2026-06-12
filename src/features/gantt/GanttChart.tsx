@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlignJustify, Minus, Plus } from 'lucide-react';
+import { AlignJustify, Minus, MoveHorizontal, Plus } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -746,10 +746,11 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
         />
       </div>
 
-      {/* Bottom-right controls: zoom + row-height */}
-      <div className="pointer-events-auto absolute bottom-4 right-4 z-20 flex flex-col items-stretch gap-1">
+      {/* Bottom-left controls: zoom + row-height */}
+      <div className="pointer-events-auto absolute bottom-4 left-4 z-20 flex flex-col items-stretch gap-1">
         {/* Zoom slider */}
         <div className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-2xs shadow-sm">
+          <MoveHorizontal size={11} className="shrink-0 text-content-muted" />
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => scaleDayWidth(1 / 1.2)}
@@ -766,7 +767,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
             value={view.dayWidthScale}
             onMouseDown={(e) => e.stopPropagation()}
             onChange={(e) => setDayWidthScale(Number(e.target.value))}
-            className="w-20 accent-[rgb(var(--color-accent))]"
+            className="w-36 accent-[rgb(var(--color-accent))]"
             title="가로 비율 조정"
           />
           <button
@@ -801,7 +802,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
             value={rowHeight}
             onMouseDown={(e) => e.stopPropagation()}
             onChange={(e) => setRowHeight(Number(e.target.value))}
-            className="w-20 accent-[rgb(var(--color-accent))]"
+            className="w-36 accent-[rgb(var(--color-accent))]"
             title="행 높이 조정"
           />
           <button
