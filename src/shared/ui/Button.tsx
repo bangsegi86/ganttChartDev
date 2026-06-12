@@ -31,7 +31,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ref={ref}
       aria-pressed={active !== undefined ? active : undefined}
       className={cn(
-        'inline-flex items-center rounded-md font-medium transition-all select-none',
+        'inline-flex items-center rounded-md font-medium transition-all select-none whitespace-nowrap',
         'active:scale-[0.97]',
         'disabled:cursor-not-allowed disabled:opacity-40',
         variants[variant],

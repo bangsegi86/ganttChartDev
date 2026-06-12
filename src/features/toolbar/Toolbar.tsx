@@ -147,245 +147,255 @@ export function Toolbar({
     else await exportPdf(baseInput, name);
   };
 
+  const rowCls = 'flex items-center gap-1 border-b border-border bg-surface-2 px-2 py-1 overflow-x-auto scrollbar-none';
+
   return (
-    <div className="flex min-w-0 items-center gap-1 border-b border-border bg-surface-2 px-2 py-1.5 overflow-x-auto scrollbar-none">
-      {/* Project name — click pencil to rename */}
-      <div className="mr-1 flex items-center gap-1">
-        {editingName ? (
-          <input
-            ref={nameRef}
-            value={nameDraft}
-            onChange={(e) => setNameDraft(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename();
-              else if (e.key === 'Escape') setEditingName(false);
-              e.stopPropagation();
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            className="h-6 min-w-[120px] max-w-[200px] flex-1 rounded border border-accent bg-surface px-1.5 text-xs text-content outline-none transition-colors focus:ring-1 focus:ring-accent/50"
-          />
-        ) : (
-          <span
-            className="max-w-[180px] truncate text-xs font-semibold text-content"
-            title={projectName}
-          >
-            {projectName}
-          </span>
-        )}
-        <button
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={editingName ? commitRename : beginRename}
-          className="rounded p-0.5 text-content-muted transition-colors hover:text-content"
-          title="프로젝트명 변경"
-        >
-          <Pencil size={13} />
-        </button>
-      </div>
-      <div className="mx-1 h-4 w-px bg-border" />
-      <Group>
-        <Button size="sm" variant="accent" onClick={() => addTask(firstSelectedId())} title="작업 추가">
-          <Plus size={14} /> 작업
-        </Button>
-        <Button size="sm" onClick={duplicateSelected} disabled={selectedCount === 0} title="복제 (Ctrl+D)">
-          <Copy size={14} />
-        </Button>
-        {cancelState === 'all-cancelled' ? (
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={deleteSelected}
-            disabled={selectedCount === 0}
-            title="영구 삭제 (Del) — 취소된 일정을 완전히 제거합니다"
-          >
-            <Trash2 size={14} /> 삭제
-          </Button>
-        ) : (
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={deleteSelected}
-            disabled={selectedCount === 0}
-            title="취소 처리 (Del) — 한 번 더 누르면 영구 삭제"
-          >
-            <Ban size={14} /> 취소
-          </Button>
-        )}
-        {cancelState === 'all-cancelled' && (
-          <Button
-            size="sm"
-            onClick={uncancelSelected}
-            disabled={selectedCount === 0}
-            title="취소 해제 — 일정을 다시 활성화합니다"
-          >
-            <RotateCcw size={14} /> 복구
-          </Button>
-        )}
-        <Button size="sm" onClick={moveUpSelected} disabled={selectedCount === 0} title="위로 이동 (Alt+↑)">
-          <ArrowUp size={14} />
-        </Button>
-        <Button size="sm" onClick={moveDownSelected} disabled={selectedCount === 0} title="아래로 이동 (Alt+↓)">
-          <ArrowDown size={14} />
-        </Button>
-        <Button size="sm" onClick={indentSelected} disabled={selectedCount === 0} title="들여쓰기 (Tab)">
-          <Indent size={14} />
-        </Button>
-        <Button size="sm" onClick={outdentSelected} disabled={selectedCount === 0} title="내어쓰기 (Shift+Tab)">
-          <Outdent size={14} />
-        </Button>
-      </Group>
-
-      <Divider />
-
-      <Group>
-        <Button size="sm" onClick={undo} disabled={past === 0} title="실행 취소 (Ctrl+Z)">
-          <Undo2 size={14} />
-        </Button>
-        <Button size="sm" onClick={redo} disabled={future === 0} title="다시 실행 (Ctrl+Y)">
-          <Redo2 size={14} />
-        </Button>
-      </Group>
-
-      <Divider />
-
-      <Group>
-        <Button size="sm" onClick={() => zoomBy(-1)} title="차트 축소 (Ctrl+-)">
-          <ZoomOut size={14} />
-        </Button>
-        <select
-          value={view.zoom}
-          onChange={(e) => setZoom(e.target.value as ZoomLevel)}
-          className="h-7 rounded-md border border-border bg-surface px-1 text-xs text-content outline-none transition-colors hover:border-content-muted/60 focus:border-accent"
-          aria-label="확대 단계"
-        >
-          {ZOOM_ORDER.slice()
-            .reverse()
-            .map((z) => (
-              <option key={z} value={z}>
-                {ZOOM_LABELS[z]}
-              </option>
-            ))}
-        </select>
-        <Button size="sm" onClick={() => zoomBy(1)} title="차트 확대 (Ctrl+=)">
-          <ZoomIn size={14} />
-        </Button>
-      </Group>
-
-      <Divider />
-
-      <Group>
-        <Button size="sm" active={view.showCriticalPath} onClick={toggleCritical} title="크리티컬 패스 — 가장 긴 경로(지연 불가) 강조">
-          <Route size={14} /> 크리티컬
-        </Button>
-        <Button size="sm" active={view.showTodayLine} onClick={toggleTodayLine} title="오늘 선 표시/숨기기">
-          <CalendarClock size={14} /> 오늘
-        </Button>
-        <Button size="sm" onClick={onOpenBaselines} title="베이스라인">
-          <FlagTriangleRight size={14} /> 베이스라인
-        </Button>
-        <Button size="sm" onClick={onOpenMarkers} title="차트 마커">
-          <MapPin size={14} /> 마커
-        </Button>
-      </Group>
-
-      <Divider />
-
-      <Group>
-        <Button size="sm" onClick={() => setActiveView('gantt')} active={view.activeView === 'gantt'}>
-          간트
-        </Button>
-        <Button size="sm" onClick={() => setActiveView('resources')} active={view.activeView === 'resources'}>
-          리소스
-        </Button>
-        <Button size="sm" onClick={() => setActiveView('calendar')} active={view.activeView === 'calendar'}>
-          달력
-        </Button>
-        <Button size="sm" onClick={() => setActiveView('groups')} active={view.activeView === 'groups'}>
-          그룹 요약
-        </Button>
-      </Group>
-
-      <Divider />
-
-      <Group>
-        <select
-          value={view.filterMode === 'group' ? `group:${view.filterGroupId}` : view.filterMode}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === 'all') setViewFilter('all');
-            else if (v === 'focus') setViewFilter('focus');
-            else if (v.startsWith('group:')) setViewFilter('group', v.slice(6));
-          }}
-          className="h-7 max-w-[150px] rounded-md border border-border bg-surface px-1 text-xs text-content outline-none transition-colors hover:border-content-muted/60 focus:border-accent"
-          aria-label="보기 필터"
-          title="표시할 작업 필터"
-        >
-          <option value="all">전체 보기</option>
-          <option value="focus" disabled={selectedCountForFilter === 0}>
-            선택 항목만{selectedCountForFilter > 0 ? ` (${selectedCountForFilter})` : ''}
-          </option>
-          {viewGroups.length > 0 && (
-            <optgroup label="보기 그룹">
-              {viewGroups.map((g) => (
-                <option key={g.id} value={`group:${g.id}`}>
-                  {g.name} ({g.taskIds.length})
-                </option>
-              ))}
-            </optgroup>
+    <div className="flex flex-col shrink-0">
+      {/* ── 행 1: 프로젝트 이름 · 편집 · 실행취소 · 파일 ── */}
+      <div className={rowCls}>
+        {/* 프로젝트명 */}
+        <div className="flex shrink-0 items-center gap-1 mr-1">
+          {editingName ? (
+            <input
+              ref={nameRef}
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                else if (e.key === 'Escape') setEditingName(false);
+                e.stopPropagation();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="h-6 min-w-[120px] max-w-[200px] rounded border border-accent bg-surface px-1.5 text-xs text-content outline-none focus:ring-1 focus:ring-accent/50"
+            />
+          ) : (
+            <span className="max-w-[160px] truncate text-xs font-semibold text-content" title={projectName}>
+              {projectName}
+            </span>
           )}
-        </select>
-        <Button size="sm" onClick={onOpenViewGroups} title="보기 그룹 관리">
-          <Layers size={14} /> 그룹
-        </Button>
-        <AssigneeFilterButton />
-      </Group>
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={editingName ? commitRename : beginRename}
+            className="rounded p-0.5 text-content-muted transition-colors hover:text-content"
+            title="프로젝트명 변경"
+          >
+            <Pencil size={12} />
+          </button>
+        </div>
 
-      <Divider />
-
-      <Group>
-        <Button size="sm" onClick={onOpenResources} title="담당자 관리">
-          <Users size={14} /> 담당자
-        </Button>
-        <Button size="sm" onClick={onOpenHolidays} title="공휴일 설정">
-          <CalendarRange size={14} /> 공휴일
-        </Button>
-        <Button size="sm" onClick={onOpenCalendar} title="근무 달력 설정">
-          <Settings2 size={14} /> 달력
-        </Button>
-      </Group>
-
-      <div className="ml-auto flex shrink-0 items-center gap-1">
-        {/* Export dropdown */}
-        <ExportDropdown onExport={exportNow} onShare={() => void shareExport()} />
         <Divider />
-        <Button size="sm" onClick={() => useProjectStore.getState().newProject()} title="새 프로젝트 (Ctrl+N)">
-          <FilePlus2 size={14} />
-        </Button>
-        <Button size="sm" onClick={() => void shareImport()} title="파일 열기 (Ctrl+O)">
-          <FolderOpen size={14} /> 열기
-        </Button>
-        <Button
-          size="sm"
-          variant={dirty ? 'accent' : 'default'}
-          onClick={() => void saveProject()}
-          title={currentFilePath ? `저장 — ${currentFilePath} (Ctrl+S)` : '저장 (Ctrl+S)'}
-        >
-          <Save size={14} /> {dirty ? '저장 ●' : '저장'}
-        </Button>
-        <Button size="sm" onClick={() => void saveAsProject()} title="다른 이름으로 저장 (Ctrl+Shift+S)">
-          <FolderInput size={14} />
-        </Button>
+
+        {/* 작업 편집 */}
+        <Group label="작업">
+          <Button size="sm" variant="accent" onClick={() => addTask(firstSelectedId())} title="작업 추가 (Enter)">
+            <Plus size={14} /> 추가
+          </Button>
+          <Button size="sm" onClick={duplicateSelected} disabled={selectedCount === 0} title="복제 (Ctrl+D)">
+            <Copy size={14} /> 복제
+          </Button>
+          {cancelState === 'all-cancelled' ? (
+            <Button size="sm" variant="danger" onClick={deleteSelected} disabled={selectedCount === 0}
+              title="영구 삭제 (Del)">
+              <Trash2 size={14} /> 삭제
+            </Button>
+          ) : (
+            <Button size="sm" variant="danger" onClick={deleteSelected} disabled={selectedCount === 0}
+              title="취소 처리 (Del) — 한 번 더 누르면 영구 삭제">
+              <Ban size={14} /> 취소
+            </Button>
+          )}
+          {cancelState === 'all-cancelled' && (
+            <Button size="sm" onClick={uncancelSelected} disabled={selectedCount === 0}
+              title="취소 해제">
+              <RotateCcw size={14} /> 복구
+            </Button>
+          )}
+        </Group>
+
         <Divider />
-        <Button size="icon" variant="ghost" onClick={toggleTheme} title={view.theme === 'dark' ? '라이트 테마로 전환' : '다크 테마로 전환'}>
-          {view.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-        </Button>
+
+        {/* 순서 / 계층 */}
+        <Group label="순서">
+          <Button size="sm" onClick={moveUpSelected} disabled={selectedCount === 0} title="위로 이동 (Alt+↑)">
+            <ArrowUp size={14} />
+          </Button>
+          <Button size="sm" onClick={moveDownSelected} disabled={selectedCount === 0} title="아래로 이동 (Alt+↓)">
+            <ArrowDown size={14} />
+          </Button>
+          <Button size="sm" onClick={indentSelected} disabled={selectedCount === 0} title="들여쓰기 — 하위 작업으로 (Tab)">
+            <Indent size={14} />
+          </Button>
+          <Button size="sm" onClick={outdentSelected} disabled={selectedCount === 0} title="내어쓰기 — 상위로 이동 (Shift+Tab)">
+            <Outdent size={14} />
+          </Button>
+        </Group>
+
+        <Divider />
+
+        {/* 실행취소 */}
+        <Group label="기록">
+          <Button size="sm" onClick={undo} disabled={past === 0} title="실행 취소 (Ctrl+Z)">
+            <Undo2 size={14} /> 취소
+          </Button>
+          <Button size="sm" onClick={redo} disabled={future === 0} title="다시 실행 (Ctrl+Y)">
+            <Redo2 size={14} /> 복원
+          </Button>
+        </Group>
+
+        {/* 파일 작업 — 우측 정렬 */}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <ExportDropdown onExport={exportNow} onShare={() => void shareExport()} />
+          <Divider />
+          <Button size="sm" onClick={() => useProjectStore.getState().newProject()} title="새 프로젝트 (Ctrl+N)">
+            <FilePlus2 size={14} /> 새 파일
+          </Button>
+          <Button size="sm" onClick={() => void shareImport()} title="파일 열기 (Ctrl+O)">
+            <FolderOpen size={14} /> 열기
+          </Button>
+          <Button
+            size="sm"
+            variant={dirty ? 'accent' : 'default'}
+            onClick={() => void saveProject()}
+            title={currentFilePath ? `저장 — ${currentFilePath} (Ctrl+S)` : '저장 (Ctrl+S)'}
+          >
+            <Save size={14} /> {dirty ? '저장 ●' : '저장'}
+          </Button>
+          <Button size="sm" onClick={() => void saveAsProject()} title="다른 이름으로 저장 (Ctrl+Shift+S)">
+            <FolderInput size={14} />
+          </Button>
+          <Divider />
+          <Button size="icon" variant="ghost" onClick={toggleTheme}
+            title={view.theme === 'dark' ? '라이트 테마' : '다크 테마'}>
+            {view.theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </Button>
+        </div>
+      </div>
+
+      {/* ── 행 2: 뷰 전환 · 줌 · 차트 표시 옵션 · 필터 · 설정 ── */}
+      <div className={rowCls}>
+        {/* 뷰 전환 */}
+        <Group label="화면">
+          <Button size="sm" onClick={() => setActiveView('gantt')} active={view.activeView === 'gantt'} title="간트 차트 뷰">
+            간트
+          </Button>
+          <Button size="sm" onClick={() => setActiveView('resources')} active={view.activeView === 'resources'} title="리소스 현황 뷰">
+            리소스
+          </Button>
+          <Button size="sm" onClick={() => setActiveView('calendar')} active={view.activeView === 'calendar'} title="달력 뷰">
+            달력
+          </Button>
+          <Button size="sm" onClick={() => setActiveView('groups')} active={view.activeView === 'groups'} title="그룹 요약 뷰">
+            그룹 요약
+          </Button>
+        </Group>
+
+        <Divider />
+
+        {/* 줌 */}
+        <Group label="배율">
+          <Button size="sm" onClick={() => zoomBy(-1)} title="차트 축소 (Ctrl+-)">
+            <ZoomOut size={14} />
+          </Button>
+          <select
+            value={view.zoom}
+            onChange={(e) => setZoom(e.target.value as ZoomLevel)}
+            className="h-7 rounded-md border border-border bg-surface px-1 text-xs text-content outline-none transition-colors hover:border-content-muted/60 focus:border-accent"
+            aria-label="확대 단계"
+          >
+            {ZOOM_ORDER.slice().reverse().map((z) => (
+              <option key={z} value={z}>{ZOOM_LABELS[z]}</option>
+            ))}
+          </select>
+          <Button size="sm" onClick={() => zoomBy(1)} title="차트 확대 (Ctrl+=)">
+            <ZoomIn size={14} />
+          </Button>
+        </Group>
+
+        <Divider />
+
+        {/* 차트 표시 옵션 */}
+        <Group label="표시">
+          <Button size="sm" active={view.showCriticalPath} onClick={toggleCritical}
+            title="크리티컬 패스 — 지연하면 전체 일정이 밀리는 경로 강조">
+            <Route size={14} /> 크리티컬
+          </Button>
+          <Button size="sm" active={view.showTodayLine} onClick={toggleTodayLine}
+            title="오늘 날짜 기준선 표시/숨기기">
+            <CalendarClock size={14} /> 오늘
+          </Button>
+          <Button size="sm" onClick={onOpenBaselines}
+            title="베이스라인 — 계획 대비 실적 비교">
+            <FlagTriangleRight size={14} /> 베이스라인
+          </Button>
+          <Button size="sm" onClick={onOpenMarkers}
+            title="차트 마커 — 날짜 기준선 표시">
+            <MapPin size={14} /> 마커
+          </Button>
+        </Group>
+
+        <Divider />
+
+        {/* 필터 */}
+        <Group label="필터">
+          <select
+            value={view.filterMode === 'group' ? `group:${view.filterGroupId}` : view.filterMode}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === 'all') setViewFilter('all');
+              else if (v === 'focus') setViewFilter('focus');
+              else if (v.startsWith('group:')) setViewFilter('group', v.slice(6));
+            }}
+            className="h-7 max-w-[130px] rounded-md border border-border bg-surface px-1 text-xs text-content outline-none transition-colors hover:border-content-muted/60 focus:border-accent"
+            aria-label="보기 필터"
+          >
+            <option value="all">전체 보기</option>
+            <option value="focus" disabled={selectedCountForFilter === 0}>
+              선택만{selectedCountForFilter > 0 ? ` (${selectedCountForFilter})` : ''}
+            </option>
+            {viewGroups.length > 0 && (
+              <optgroup label="보기 그룹">
+                {viewGroups.map((g) => (
+                  <option key={g.id} value={`group:${g.id}`}>
+                    {g.name} ({g.taskIds.length})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          <Button size="sm" onClick={onOpenViewGroups} title="보기 그룹 관리">
+            <Layers size={14} /> 그룹
+          </Button>
+          <AssigneeFilterButton />
+        </Group>
+
+        <Divider />
+
+        {/* 프로젝트 설정 */}
+        <Group label="설정">
+          <Button size="sm" onClick={onOpenResources} title="담당자 관리">
+            <Users size={14} /> 담당자
+          </Button>
+          <Button size="sm" onClick={onOpenHolidays} title="공휴일 설정">
+            <CalendarRange size={14} /> 공휴일
+          </Button>
+          <Button size="sm" onClick={onOpenCalendar} title="근무 달력 설정">
+            <Settings2 size={14} /> 달력
+          </Button>
+        </Group>
       </div>
     </div>
   );
 }
 
-function Group({ children }: { children: React.ReactNode }) {
-  return <div className="flex items-center gap-1">{children}</div>;
+function Group({ label, children }: { label?: string; children: React.ReactNode }) {
+  if (!label) return <div className="flex items-center gap-1">{children}</div>;
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <div className="flex items-center gap-1">{children}</div>
+      <span className="text-[9px] leading-none text-content-muted/60 select-none">{label}</span>
+    </div>
+  );
 }
 
 function Divider() {
