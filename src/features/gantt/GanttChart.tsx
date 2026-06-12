@@ -104,7 +104,15 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   const zoomConfig = ZOOM_CONFIGS[view.zoom];
   // Effective day width = preset × fine-zoom scale (Ctrl+Wheel).
   const effectiveDayWidth = zoomConfig.dayWidth * view.dayWidthScale;
-  const zoom = { ...zoomConfig, dayWidth: effectiveDayWidth };
+  // Memoize zoom so its object reference only changes when zoom/scale actually
+  // changes — not on every render. Without this, buildModel → draw → onWindowMove
+  // all get new references on every render, causing the cleanup useEffect to
+  // remove the window mousemove listener and breaking pan mid-gesture.
+  const zoom = useMemo(
+    () => ({ ...zoomConfig, dayWidth: effectiveDayWidth }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view.zoom, effectiveDayWidth],
+  );
 
   const visibleTasks = useVisibleTasks();
   const rows = useMemo(() => buildVisibleRows(visibleTasks), [visibleTasks]);
@@ -262,7 +270,9 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       markers: project.markers ?? [],
       rowHeight,
     };
-  }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected, view, baselineMap, taskGroupColor, taskAssigneeColor, rowHeight]);
+  }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected,
+      view.theme, view.showTodayLine, view.showCriticalPath, view.showBaseline,
+      baselineMap, taskGroupColor, taskAssigneeColor, rowHeight]);
 
   const draw = useCallback(() => {
     const scroller = scrollerRef.current;
