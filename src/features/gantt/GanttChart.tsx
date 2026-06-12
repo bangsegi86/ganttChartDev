@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlignJustify, Minus, MoveHorizontal, Plus } from 'lucide-react';
+import { AlignJustify, Minus, Plus } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
@@ -750,7 +750,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       <div className="pointer-events-auto absolute bottom-4 left-4 z-20 flex flex-col items-stretch gap-1">
         {/* Zoom slider */}
         <div className="flex items-center gap-1 rounded-md border border-border bg-surface-2 px-2 py-1 text-2xs shadow-sm">
-          <MoveHorizontal size={11} className="shrink-0 text-content-muted" />
+          <AlignJustify size={11} className="shrink-0 rotate-90 text-content-muted" />
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => scaleDayWidth(1 / 1.2)}
@@ -813,8 +813,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
           >
             <Plus size={12} />
           </button>
-          <span className="w-7 text-right tabular-nums text-content-muted">
-            {rowHeight}
+          <span className="w-9 text-right tabular-nums text-content-muted">
+            {rowHeight}%
           </span>
         </div>
       </div>
