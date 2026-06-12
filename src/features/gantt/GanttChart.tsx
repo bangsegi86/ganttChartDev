@@ -374,9 +374,10 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller || Math.abs(scroller.scrollTop - scrollTop) <= 0.5) return;
-    // If the user is actively scrolling this panel, the prop is stale (RAF lag).
-    // Skip to avoid snapping back, which causes the visible oscillation.
+    // Skip during user-initiated scroll or active pan: the prop may be one
+    // React render behind the live DOM value; overwriting it causes oscillation.
     if (isUserScrollingRef.current) return;
+    if (dragRef.current.mode === 'pan') return;
     isSyncingRef.current = true;
     scroller.scrollTop = scrollTop;
     draw();
@@ -543,8 +544,13 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       const rect = scroller.getBoundingClientRect();
 
       if (drag.mode === 'pan') {
+        // Use isSyncingRef to suppress the native scroll event from re-firing
+        // handleScroll → onScrollTopChange. We call onScrollTopChange once
+        // ourselves below, so the double-invocation is avoided.
+        isSyncingRef.current = true;
         scroller.scrollLeft = drag.startScrollLeft - (e.clientX - drag.startClientX);
         scroller.scrollTop = drag.startScrollTop - (e.clientY - drag.startClientY);
+        requestAnimationFrame(() => { isSyncingRef.current = false; });
         onScrollTopChange(scroller.scrollTop);
         draw();
         return;
