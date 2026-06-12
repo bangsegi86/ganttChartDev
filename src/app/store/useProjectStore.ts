@@ -811,9 +811,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           if (!t) continue;
           t.start = addDaysISO(t.start, deltaDays);
           t.end = addDaysISO(t.end, deltaDays);
-          t.constraint = 'snet';
-          t.constraintDate = t.start;
-          t.manuallyScheduled = false;
+          // Pin at the new position so the scheduler doesn't re-derive dates
+          // from predecessors and undo the move.
+          t.manuallyScheduled = true;
         }
       });
     },
