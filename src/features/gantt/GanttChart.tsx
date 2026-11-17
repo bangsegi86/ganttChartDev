@@ -225,20 +225,40 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   // Render model + draw
   // --------------------------------------------------------------------------
 
+  /** parentId → visible child ids, for O(subtree) drag previews. */
+  const childRowsOf = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const r of rows) {
+      const pid = r.task.parentId;
+      if (!pid) continue;
+      const list = map.get(pid);
+      if (list) list.push(r.task.id); else map.set(pid, [r.task.id]);
+    }
+    return map;
+  }, [rows]);
+  const holidaySet = useMemo(() => new Set(project.holidays.map((h) => h.date)), [project.holidays]);
+  const weekendDays = useMemo(
+    () => new Set([0, 6].filter((d) => !project.calendar.workingWeekdays.includes(d))),
+    [project.calendar.workingWeekdays],
+  );
+
   const buildModel = useCallback((): GanttRenderModel => {
     const palette = readPalette(view.theme);
     const drag = dragRef.current;
     let renderRows = rows;
     if (drag.mode && drag.taskId && drag.deltaDays !== 0) {
       // For summary bars (has children), preview-offset the whole subtree.
-      const hasChildren = rows.some((r) => r.task.parentId === drag.taskId);
-      if (drag.mode === 'move' && hasChildren) {
-        const subtreeIds = new Set<string>();
-        const collect = (pid: string): void => {
-          subtreeIds.add(pid);
-          for (const r of rows) { if (r.task.parentId === pid) collect(r.task.id); }
-        };
-        collect(drag.taskId);
+      const kids = childRowsOf.get(drag.taskId);
+      if (drag.mode === 'move' && kids && kids.length > 0) {
+        const subtreeIds = new Set<string>([drag.taskId]);
+        const stack = [...kids];
+        while (stack.length > 0) {
+          const id = stack.pop()!;
+          if (subtreeIds.has(id)) continue;
+          subtreeIds.add(id);
+          const more = childRowsOf.get(id);
+          if (more) stack.push(...more);
+        }
         renderRows = rows.map((r) =>
           subtreeIds.has(r.task.id) ? { ...r, task: applyDragPreview(r.task, drag) } : r,
         );
@@ -259,8 +279,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       dependencies: project.dependencies,
       rowIndex,
       selected,
-      holidaySet: new Set(project.holidays.map((h) => h.date)),
-      weekendDays: new Set([0, 6].filter((d) => !project.calendar.workingWeekdays.includes(d))),
+      holidaySet,
+      weekendDays,
       today: todayISO(),
       showTodayLine: view.showTodayLine,
       showCritical: view.showCriticalPath,
@@ -275,7 +295,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       markers: project.markers ?? [],
       rowHeight,
     };
-  }, [rows, timeline, zoom, derived.schedules, project, rowIndex, selected,
+  }, [rows, childRowsOf, holidaySet, weekendDays, timeline, zoom, derived.schedules, project, rowIndex, selected,
       view.theme, view.showTodayLine, view.showCriticalPath, view.showBaseline,
       baselineMap, taskGroupColor, taskAssigneeColor, rowHeight]);
 
@@ -371,33 +391,57 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [draw, showToast]);
 
-  const handleScroll = useCallback(() => {
-    // Skip events triggered by our own programmatic scrollTop assignments.
-    if (isSyncingRef.current) return;
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-    // Mark that the user (not a sync) drove this scroll so the sync effect
-    // won't snap us back to a stale scrollTop while RAF throttle catches up.
-    isUserScrollingRef.current = true;
-    if (clearUserScrollTimer.current) clearTimeout(clearUserScrollTimer.current);
-    clearUserScrollTimer.current = setTimeout(() => { isUserScrollingRef.current = false; }, 150);
-    onScrollTopChange(scroller.scrollTop);
-    draw();
-  }, [draw, onScrollTopChange]);
+  // Latest shared offset + the offset we last wrote ourselves (see grid).
+  const latestScrollTopRef = useRef(scrollTop);
+  latestScrollTopRef.current = scrollTop;
+  const lastSyncedTopRef = useRef<number | null>(null);
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
 
-  // Sync scrollTop prop → DOM (from DataGrid scroll events only).
-  useEffect(() => {
+  /** Apply the shared offset to the DOM unless the user is driving this pane. */
+  const applyScrollSync = useCallback(() => {
     const scroller = scrollerRef.current;
-    if (!scroller || Math.abs(scroller.scrollTop - scrollTop) <= 0.5) return;
+    const target = latestScrollTopRef.current;
+    if (!scroller || Math.abs(scroller.scrollTop - target) <= 0.5) return;
     // Skip during user-initiated scroll or active pan: the prop may be one
     // React render behind the live DOM value; overwriting it causes oscillation.
     if (isUserScrollingRef.current) return;
     if (dragRef.current.mode === 'pan') return;
     isSyncingRef.current = true;
-    scroller.scrollTop = scrollTop;
-    draw();
+    scroller.scrollTop = target;
+    lastSyncedTopRef.current = scroller.scrollTop;
+    drawRef.current();
     requestAnimationFrame(() => { isSyncingRef.current = false; });
-  }, [scrollTop, draw]);
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    // Skip events triggered by our own programmatic scrollTop assignments.
+    if (isSyncingRef.current) return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    // A late echo of our own write is not user input (horizontal scrolls keep
+    // the same top and still need a redraw).
+    if (lastSyncedTopRef.current !== null && Math.abs(scroller.scrollTop - lastSyncedTopRef.current) <= 0.5) {
+      draw();
+      return;
+    }
+    lastSyncedTopRef.current = null;
+    // Mark that the user (not a sync) drove this scroll so the sync effect
+    // won't snap us back to a stale scrollTop while RAF throttle catches up.
+    isUserScrollingRef.current = true;
+    if (clearUserScrollTimer.current) clearTimeout(clearUserScrollTimer.current);
+    clearUserScrollTimer.current = setTimeout(() => {
+      isUserScrollingRef.current = false;
+      applyScrollSync(); // catch up with any offset skipped meanwhile
+    }, 150);
+    onScrollTopChange(scroller.scrollTop);
+    draw();
+  }, [draw, onScrollTopChange, applyScrollSync]);
+
+  // Sync scrollTop prop → DOM (from DataGrid scroll events only).
+  useEffect(() => {
+    applyScrollSync();
+  }, [scrollTop, applyScrollSync]);
 
   // Scroll gantt horizontally to show a requested date near the left edge.
   useEffect(() => {

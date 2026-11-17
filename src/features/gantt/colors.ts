@@ -31,7 +31,23 @@ function readVar(name: string): string {
   return raw ? `rgb(${raw.split(/\s+/).join(' ')})` : '#000';
 }
 
+let paletteCache: { key: string; palette: CanvasPalette } | null = null;
+
+/**
+ * Canvas colours for the current theme. `getComputedStyle` forces a style
+ * read, and this runs on every scroll frame, so the result is cached until the
+ * theme or the root element's class/style (where theme tokens live) changes.
+ */
 export function readPalette(theme: 'light' | 'dark'): CanvasPalette {
+  const root = document.documentElement;
+  const key = `${theme}|${root.className}|${root.getAttribute('style') ?? ''}|${root.dataset.theme ?? ''}`;
+  if (paletteCache?.key === key) return paletteCache.palette;
+  const palette = computePalette(theme);
+  paletteCache = { key, palette };
+  return palette;
+}
+
+function computePalette(theme: 'light' | 'dark'): CanvasPalette {
   const dark = theme === 'dark';
   return {
     surface: readVar('--color-surface'),

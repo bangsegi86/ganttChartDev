@@ -14,6 +14,7 @@ import type {
 } from '@/entities';
 import type { FilterMode } from '@/features/view/viewFilter';
 import { recalc, type DerivedSchedule } from './recalc';
+import { shareProject } from './structuralShare';
 import { wouldCreateCycle } from '@/services/dependency/graph';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
 import { bridge } from '@/shared/bridge';
@@ -281,6 +282,14 @@ function parseTsvDataRows(text: string): string[][] {
   return hasHeader ? rows.slice(1) : rows;
 }
 
+/** Task fields whose change can never move a date or the critical path. */
+const COSMETIC_FIELDS = new Set<keyof Task>(['name', 'notes', 'color', 'priority', 'assigneeIds', 'collapsed']);
+
+/** True when any patch touches a field the scheduler or CPM depends on. */
+function affectsSchedule(patches: Partial<Task>[]): boolean {
+  return patches.some((p) => Object.keys(p).some((k) => !COSMETIC_FIELDS.has(k as keyof Task)));
+}
+
 export const useProjectStore = create<ProjectStore>((set, get) => {
   const initialDerived = recalc(emptyProject());
 
@@ -289,12 +298,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
    * schedule, push the previous state onto the undo stack, and schedule an
    * autosave. This is the single write path for all document edits.
    */
-  function commit(mutator: (draft: Project) => void): void {
+  function commit(
+    mutator: (draft: Project) => void,
+    opts: { reschedule?: boolean } = {},
+  ): void {
     const state = get();
     const prev = state.derived.project;
     const draft: Project = structuredClone(prev);
     mutator(draft);
-    const derived = recalc(draft);
+    // Edits that cannot move any date (name, notes, colour…) skip the full
+    // schedule + CPM pass: the draft is a clone of an already-scheduled project.
+    const solved: DerivedSchedule =
+      opts.reschedule === false ? { ...state.derived, project: draft } : recalc(draft);
+    // Re-use unchanged objects from the previous version (cheap undo history,
+    // working React memoisation). A no-op edit leaves history untouched.
+    const project = shareProject(prev, solved.project);
+    if (project === prev) return;
+    const derived: DerivedSchedule = { ...solved, project };
     const past = [...state.past, prev].slice(-HISTORY_LIMIT);
     set({ derived, project: derived.project, past, future: [], dirty: true });
     scheduleAutosave();
@@ -306,6 +326,37 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
    * interval. (A debounce here meant nothing was saved while the user kept
    * editing more often than once a minute.)
    */
+  /**
+   * Change only tasks' `collapsed` flags. Collapse state is a view concern: it
+   * never affects the schedule, so it skips recalc, the undo history and the
+   * dirty flag. Only the touched task objects are copied.
+   */
+  function setCollapsed(next: (t: Task) => boolean): void {
+    const state = get();
+    let changed = false;
+    const tasks = state.derived.project.tasks.map((t) => {
+      const c = next(t);
+      if (c === t.collapsed) return t;
+      changed = true;
+      return { ...t, collapsed: c };
+    });
+    if (!changed) return;
+    const project = { ...state.derived.project, tasks };
+    set({ derived: { ...state.derived, project }, project });
+  }
+
+  /** Carry the current collapse state onto a history snapshot being restored. */
+  function keepCollapse(target: Project): Project {
+    const current = new Map(get().derived.project.tasks.map((t) => [t.id, t.collapsed]));
+    return {
+      ...target,
+      tasks: target.tasks.map((t) => {
+        const c = current.get(t.id);
+        return c === undefined || c === t.collapsed ? t : { ...t, collapsed: c };
+      }),
+    };
+  }
+
   function scheduleAutosave(): void {
     if (autosaveTimer) return;
     autosaveTimer = setTimeout(() => {
@@ -461,7 +512,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         if (t.start > t.end) t.end = t.start;
         // Editing dates directly implies a manual pin unless cleared.
         if (patch.start || patch.end) t.manuallyScheduled = true;
-      });
+      }, { reschedule: affectsSchedule([patch]) });
     },
 
     addTaskBefore(beforeId) {
@@ -584,19 +635,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     toggleCollapse(id) {
-      commit((d) => {
-        const t = d.tasks.find((x) => x.id === id);
-        if (t) t.collapsed = !t.collapsed;
-      });
+      setCollapsed((t) => (t.id === id ? !t.collapsed : t.collapsed));
     },
 
     expandAll() {
-      commit((d) => { for (const t of d.tasks) t.collapsed = false; });
+      setCollapsed(() => false);
     },
 
     collapseAll() {
       const parentIds = new Set(get().derived.project.tasks.map((t) => t.parentId).filter(Boolean));
-      commit((d) => { for (const t of d.tasks) if (parentIds.has(t.id)) t.collapsed = true; });
+      setCollapsed((t) => (parentIds.has(t.id) ? true : t.collapsed));
     },
 
     indentTask(id) {
@@ -1046,8 +1094,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       commit((d) => {
         const norm = (v: string) =>
           /^\d{8}$/.test(v) ? `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}` : v;
+        const byId = new Map(d.tasks.map((x) => [x.id, x]));
         for (const { id, patch } of updates) {
-          const t = d.tasks.find((x) => x.id === id);
+          const t = byId.get(id);
           if (!t) continue;
           const normalized: Partial<Task> = { ...patch };
           if (typeof normalized.start === 'string') normalized.start = norm(normalized.start);
@@ -1056,7 +1105,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           if (t.start > t.end) t.end = t.start;
           if (patch.start !== undefined || patch.end !== undefined) t.manuallyScheduled = true;
         }
-      });
+      }, { reschedule: affectsSchedule(updates.map((u) => u.patch)) });
     },
 
     // --- dependencies ---
@@ -1229,7 +1278,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const { past, derived, future } = get();
       if (past.length === 0) return;
       const prev = past[past.length - 1]!;
-      const newDerived = recalc(prev);
+      const solved = recalc(keepCollapse(prev));
+      const newDerived = { ...solved, project: shareProject(derived.project, solved.project) };
       set({
         derived: newDerived,
         project: newDerived.project,
@@ -1243,7 +1293,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const { future, derived, past } = get();
       if (future.length === 0) return;
       const next = future[0]!;
-      const newDerived = recalc(next);
+      const solved = recalc(keepCollapse(next));
+      const newDerived = { ...solved, project: shareProject(derived.project, solved.project) };
       set({
         derived: newDerived,
         project: newDerived.project,

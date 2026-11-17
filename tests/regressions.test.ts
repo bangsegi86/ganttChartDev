@@ -87,3 +87,39 @@ describe('autosave', () => {
     expect(autosaveWrite).toHaveBeenCalled();
   });
 });
+
+describe('store structural sharing + collapse', () => {
+  it('re-uses unchanged task objects and keeps collapse out of history', async () => {
+    const { useProjectStore } = await import('@/app/store/useProjectStore');
+    useProjectStore.getState().loadProject(createDemoProject());
+    const before = useProjectStore.getState().derived.project.tasks;
+    const leaf = before.find((t) => t.parentId && !before.some((c) => c.parentId === t.id))!;
+
+    useProjectStore.getState().updateTask(leaf.id, { name: '이름만 변경' });
+    const after = useProjectStore.getState().derived.project.tasks;
+    const untouched = after.filter((t) => t.id !== leaf.id);
+    expect(untouched.every((t) => before.includes(t))).toBe(true);
+    expect(after.find((t) => t.id === leaf.id)!.name).toBe('이름만 변경');
+
+    const parent = after.find((t) => after.some((c) => c.parentId === t.id))!;
+    const pastLen = useProjectStore.getState().past.length;
+    useProjectStore.getState().toggleCollapse(parent.id);
+    expect(useProjectStore.getState().past.length).toBe(pastLen);
+    const collapsed = useProjectStore.getState().derived.project.tasks.find((t) => t.id === parent.id)!.collapsed;
+    expect(collapsed).toBe(!parent.collapsed);
+
+    // Undoing the rename must not undo the collapse.
+    useProjectStore.getState().undo();
+    const s = useProjectStore.getState().derived.project.tasks;
+    expect(s.find((t) => t.id === leaf.id)!.name).toBe(leaf.name);
+    expect(s.find((t) => t.id === parent.id)!.collapsed).toBe(collapsed);
+  });
+
+  it('does not record a no-op edit', async () => {
+    const { useProjectStore } = await import('@/app/store/useProjectStore');
+    useProjectStore.getState().loadProject(createDemoProject());
+    useProjectStore.getState().updateTask('does-not-exist', { name: 'x' });
+    expect(useProjectStore.getState().past.length).toBe(0);
+    expect(useProjectStore.getState().dirty).toBe(false);
+  });
+});

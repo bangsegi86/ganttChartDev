@@ -21,6 +21,7 @@ import { ProjectManagerDialog } from '@/features/dialogs/ProjectManagerDialog';
 import { MarkerManager } from '@/features/dialogs/MarkerManager';
 import { ViewFilterBanner } from '@/features/view/ViewFilterBanner';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
+import { useScrollSync } from '@/app/store/useScrollSync';
 import { Button } from '@/shared/ui/Button';
 import { bridge } from '@/shared/bridge';
 import { exportExcel } from '@/services/export/exportExcel';
@@ -44,7 +45,6 @@ export default function App() {
 
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [scrollTop, setScrollTop] = useState(0);
   const [recovery, setRecovery] = useState<null | (() => void)>(null);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
 
@@ -182,9 +182,9 @@ export default function App() {
           <GroupSummaryView />
         ) : (
           <>
-            <DataGrid width={gridWidth} scrollTop={scrollTop} onScrollTopChange={setScrollTop} />
+            <SyncedDataGrid width={gridWidth} />
             {!gridCollapsed && <SplitDivider />}
-            <GanttChart scrollTop={scrollTop} onScrollTopChange={setScrollTop} />
+            <SyncedGanttChart />
           </>
         )}
       </div>
@@ -310,4 +310,18 @@ function ShortcutsTable() {
       )}
     </div>
   );
+}
+
+/** Grid pane bound to the shared scroll offset (keeps scroll re-renders local). */
+function SyncedDataGrid({ width }: { width: number }) {
+  const scrollTop = useScrollSync((s) => s.scrollTop);
+  const setScrollTop = useScrollSync((s) => s.setScrollTop);
+  return <DataGrid width={width} scrollTop={scrollTop} onScrollTopChange={setScrollTop} />;
+}
+
+/** Gantt pane bound to the shared scroll offset. */
+function SyncedGanttChart() {
+  const scrollTop = useScrollSync((s) => s.scrollTop);
+  const setScrollTop = useScrollSync((s) => s.setScrollTop);
+  return <GanttChart scrollTop={scrollTop} onScrollTopChange={setScrollTop} />;
 }
