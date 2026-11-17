@@ -25,7 +25,7 @@ import { useScrollSync } from '@/app/store/useScrollSync';
 import { Button } from '@/shared/ui/Button';
 import { bridge } from '@/shared/bridge';
 import { exportExcel } from '@/services/export/exportExcel';
-import { exportPdf, exportPng } from '@/services/export/exportImage';
+import { exportPdf, exportPng, warnIfTruncated } from '@/services/export/exportImage';
 
 type DialogKind = 'projects' | 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | 'markers' | null;
 
@@ -105,12 +105,14 @@ export default function App() {
           state.clearAppToast();
         } else if (action === 'menu:export-png') {
           state.showAppToast('PNG 이미지 내보내기 중...', 'success');
-          await exportPng({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
+          const r = await exportPng({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
           state.clearAppToast();
+          warnIfTruncated(r);
         } else if (action === 'menu:export-pdf') {
           state.showAppToast('PDF 내보내기 중...', 'success');
-          await exportPdf({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
+          const r = await exportPdf({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
           state.clearAppToast();
+          warnIfTruncated(r);
         } else if (action === 'menu:zoom-in') {
           state.scaleDayWidth(1.2);
         } else if (action === 'menu:zoom-out') {

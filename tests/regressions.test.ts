@@ -123,3 +123,125 @@ describe('store structural sharing + collapse', () => {
     expect(useProjectStore.getState().dirty).toBe(false);
   });
 });
+
+describe('cancelled tasks and CPM on real dates', () => {
+  const base = () => {
+    const p = createDemoProject();
+    p.startDate = '2026-01-05'; // Monday
+    p.holidays = [];
+    p.calendar = { ...p.calendar, workingWeekdays: [1, 2, 3, 4, 5], mode: 'working' };
+    return p;
+  };
+  const leaf = (id: string, dur: number, extra: Partial<Task> = {}): Task => ({
+    ...task(id, null, '2026-01-05', '2026-01-05'), manuallyScheduled: false, durationDays: dur, ...extra,
+  } as Task);
+
+  it('ignores a cancelled predecessor and leaves it out of CPM', async () => {
+    const { recalc } = await import('@/app/store/recalc');
+    const p = base();
+    p.tasks = [leaf('A', 5, { cancelled: true }), leaf('B', 2)];
+    p.dependencies = [{ id: 'd', fromId: 'A', toId: 'B', type: 'FS', lagDays: 0 }];
+    const r = recalc(p);
+    expect(r.project.tasks.find((t) => t.id === 'B')!.start).toBe('2026-01-05');
+    expect(r.schedules.has('A')).toBe(false);
+  });
+
+  it('marks a chain pushed late by a constraint as critical', async () => {
+    const { recalc } = await import('@/app/store/recalc');
+    const p = base();
+    // Chain X→Y is short but X is pinned (SNET) two weeks out, so it finishes
+    // last; chain P→Q is longer in duration but finishes earlier.
+    p.tasks = [
+      leaf('P', 5), leaf('Q', 5),
+      leaf('X', 1, { constraint: 'snet', constraintDate: '2026-01-19' }), leaf('Y', 1),
+    ];
+    p.dependencies = [
+      { id: '1', fromId: 'P', toId: 'Q', type: 'FS', lagDays: 0 },
+      { id: '2', fromId: 'X', toId: 'Y', type: 'FS', lagDays: 0 },
+    ];
+    const r = recalc(p);
+    expect(r.schedules.get('X')!.isCritical).toBe(true);
+    expect(r.schedules.get('Y')!.isCritical).toBe(true);
+    expect(r.schedules.get('P')!.isCritical).toBe(false);
+    expect(r.schedules.get('P')!.totalFloat).toBeGreaterThan(0);
+  });
+
+  it('excludes cancelled tasks from workload', async () => {
+    const { computeWorkload } = await import('@/services/resource/workload');
+    const p = base();
+    p.resources = [{ id: 'r', name: 'r', color: '#000', capacityHoursPerDay: 8 } as never];
+    p.tasks = [
+      { ...task('a', null, '2026-01-05', '2026-01-09'), assigneeIds: ['r'] } as Task,
+      { ...task('b', null, '2026-01-05', '2026-01-09'), assigneeIds: ['r'], cancelled: true } as Task,
+    ];
+    const [w] = computeWorkload(p);
+    expect(w!.totalHours).toBe(40);
+  });
+});
+
+describe('date edits behave like a bar drag', () => {
+  it('typed start becomes SNET, typed end sets working-day duration', async () => {
+    const { useProjectStore } = await import('@/app/store/useProjectStore');
+    const p = createDemoProject();
+    p.startDate = '2026-01-05';
+    p.holidays = [];
+    p.calendar = { ...p.calendar, workingWeekdays: [1, 2, 3, 4, 5], mode: 'working' };
+    p.tasks = [
+      { ...task('A', null, '2026-01-05', '2026-01-09'), manuallyScheduled: false, durationDays: 5 } as Task,
+      { ...task('B', null, '2026-01-12', '2026-01-12', 1), manuallyScheduled: false, durationDays: 1 } as Task,
+    ];
+    p.dependencies = [{ id: 'd', fromId: 'A', toId: 'B', type: 'FS', lagDays: 0 }];
+    useProjectStore.getState().loadProject(p);
+    const get = (id: string) => useProjectStore.getState().derived.project.tasks.find((t) => t.id === id)!;
+
+    useProjectStore.getState().updateTask('B', { start: '20260119' });
+    expect(get('B')).toMatchObject({ start: '2026-01-19', constraint: 'snet', manuallyScheduled: false });
+
+    // Predecessor now pushed past B's anchor → B follows it (a manual pin would not).
+    useProjectStore.getState().updateTask('A', { end: '2026-01-23' });
+    expect(get('A').durationDays).toBe(15);
+    expect(get('B').start).toBe('2026-01-26');
+
+    // Typing a start earlier than the predecessor allows is adjusted, with a notice.
+    useProjectStore.getState().updateTask('B', { start: '2026-01-06' });
+    expect(get('B').start).toBe('2026-01-26');
+    expect(useProjectStore.getState().view.appToast?.msg).toContain('2026-01-26');
+  });
+});
+
+describe('loading and saving', () => {
+  it('repairs a malformed file instead of crashing', async () => {
+    const { normalizeProject } = await import('@/app/store/normalizeProject');
+    const p = normalizeProject({
+      name: 'x',
+      tasks: [
+        { id: 'a', name: 'A', start: 'bad', parentId: 'missing' },
+        { id: 'b', parentId: 'c' },
+        { id: 'c', parentId: 'b' },
+        { id: 'a' },
+      ],
+      dependencies: [{ fromId: 'a', toId: 'ghost' }, { fromId: 'a', toId: 'b', type: 'XX' }],
+      calendar: { workingWeekdays: [] },
+    });
+    expect(p.tasks).toHaveLength(4);
+    expect(new Set(p.tasks.map((t) => t.id)).size).toBe(4);
+    expect(p.tasks[0]).toMatchObject({ parentId: null, assigneeIds: [], constraint: 'asap' });
+    expect(p.tasks[0]!.start).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // b ↔ c parent cycle is broken
+    const b = p.tasks.find((t) => t.id === 'b')!;
+    const c = p.tasks.find((t) => t.id === 'c')!;
+    expect(b.parentId === null || c.parentId === null).toBe(true);
+    expect(p.dependencies).toEqual([{ id: expect.any(String), fromId: 'a', toId: 'b', type: 'FS', lagDays: 0 }]);
+    expect(p.calendar.workingWeekdays).toEqual([1, 2, 3, 4, 5]);
+
+    const { recalc } = await import('@/app/store/recalc');
+    expect(() => recalc(p)).not.toThrow();
+  });
+
+  it('saving does not create an undo step', async () => {
+    const { useProjectStore } = await import('@/app/store/useProjectStore');
+    useProjectStore.getState().loadProject(createDemoProject());
+    await useProjectStore.getState().saveProject();
+    expect(useProjectStore.getState().past).toHaveLength(0);
+  });
+});

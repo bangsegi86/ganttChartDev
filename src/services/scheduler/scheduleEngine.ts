@@ -34,8 +34,9 @@ export function scheduleProject(project: Project): ScheduleResult {
     if (!task) continue;
 
     // Manually scheduled tasks keep their authored dates but still act as
-    // predecessors for downstream propagation.
-    if (!task.manuallyScheduled) {
+    // predecessors for downstream propagation. Cancelled tasks are frozen
+    // where they are and are ignored as predecessors (see below).
+    if (!task.manuallyScheduled && !task.cancelled) {
       const earliest = earliestStartFromPredecessors(task, adj, leafById, cal, project);
       const constrained = applyConstraint(task, earliest, cal);
       task.start = cal.nextWorkingDay(constrained);
@@ -76,7 +77,8 @@ function earliestStartFromPredecessors(
   const candidates: ISODate[] = [];
   for (const link of links) {
     const pred = leafById.get(link.fromId);
-    if (!pred) continue;
+    // A cancelled predecessor no longer constrains its successors.
+    if (!pred || pred.cancelled) continue;
     const dur = Math.max(1, task.durationDays);
     switch (link.type) {
       case 'FS': {
@@ -102,6 +104,7 @@ function earliestStartFromPredecessors(
       }
     }
   }
+  // Every predecessor cancelled: behave like a task without predecessors.
   return maxISO(candidates) ?? project.startDate;
 }
 
@@ -175,8 +178,12 @@ function rollUpParents(tasks: Task[], cal: WorkingCalendar): void {
     .map((x) => x.t);
 
   for (const parent of parents) {
-    const kids = childrenOf.get(parent.id) ?? [];
-    if (kids.length === 0) continue;
+    const allKids = childrenOf.get(parent.id) ?? [];
+    if (allKids.length === 0) continue;
+    // Cancelled children do not count toward the summary span or progress,
+    // unless every child is cancelled (then the summary still spans them).
+    const active = allKids.filter((k) => !k.cancelled);
+    const kids = active.length > 0 ? active : allKids;
     const start = minISO(kids.map((k) => k.start));
     const end = maxISO(kids.map((k) => k.end));
     if (start) parent.start = start;

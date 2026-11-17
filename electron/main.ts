@@ -160,6 +160,13 @@ ipcMain.handle(
 
 // --- IPC: project file sharing (공유 내보내기/가져오기) -------------------------
 
+/**
+ * Paths the user picked in a native open/save dialog during this session.
+ * `project:save-to-path` only writes to these, so the renderer cannot ask the
+ * main process to overwrite an arbitrary file.
+ */
+const userChosenPaths = new Set<string>();
+
 ipcMain.handle('project:export-file', async (_e, defaultName: string, json: string) => {
   const win = mainWindow ?? BrowserWindow.getFocusedWindow();
   const { canceled, filePath } = await dialog.showSaveDialog(win!, {
@@ -171,6 +178,7 @@ ipcMain.handle('project:export-file', async (_e, defaultName: string, json: stri
   });
   if (canceled || !filePath) return { ok: false };
   await fs.writeFile(filePath, json, 'utf-8');
+  userChosenPaths.add(path.resolve(filePath));
   return { ok: true, path: filePath };
 });
 
@@ -185,6 +193,7 @@ ipcMain.handle('project:import-file', async () => {
   if (canceled || !filePaths[0]) return { ok: false, json: null, path: null };
   try {
     const json = await fs.readFile(filePaths[0], 'utf-8');
+    userChosenPaths.add(path.resolve(filePaths[0]));
     return { ok: true, json, path: filePaths[0] };
   } catch {
     return { ok: false, json: null, path: null };
@@ -192,6 +201,9 @@ ipcMain.handle('project:import-file', async () => {
 });
 
 ipcMain.handle('project:save-to-path', async (_e, filePath: string, json: string) => {
+  if (typeof filePath !== 'string' || !userChosenPaths.has(path.resolve(filePath))) {
+    return { ok: false, path: null, error: 'path-not-allowed' };
+  }
   try {
     const tmp = `${filePath}.tmp`;
     await fs.writeFile(tmp, json, 'utf-8');

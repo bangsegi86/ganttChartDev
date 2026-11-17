@@ -40,7 +40,7 @@ import { useProjectStore } from '@/app/store/useProjectStore';
 import { Button } from '@/shared/ui/Button';
 import { ZOOM_ORDER, type ZoomLevel } from '@/features/gantt/zoom';
 import { exportExcel } from '@/services/export/exportExcel';
-import { exportPdf, exportPng } from '@/services/export/exportImage';
+import { exportPdf, exportPng, warnIfTruncated } from '@/services/export/exportImage';
 import { exportHtml } from '@/services/export/exportHtml';
 
 const ZOOM_LABELS: Record<ZoomLevel, string> = {
@@ -143,8 +143,8 @@ export function Toolbar({
     };
     if (kind === 'excel') await exportExcel(project, name, baseInput);
     else if (kind === 'html') await exportHtml(baseInput, name);
-    else if (kind === 'png') await exportPng(baseInput, name);
-    else await exportPdf(baseInput, name);
+    else if (kind === 'png') warnIfTruncated(await exportPng(baseInput, name));
+    else warnIfTruncated(await exportPdf(baseInput, name));
   };
 
   const rowCls = 'flex items-center gap-1 border-b border-border bg-surface-2 px-2 py-1 overflow-x-auto scrollbar-none';
