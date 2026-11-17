@@ -37,8 +37,8 @@ export function scheduleProject(project: Project): ScheduleResult {
     // predecessors for downstream propagation. Cancelled tasks are frozen
     // where they are and are ignored as predecessors (see below).
     if (!task.manuallyScheduled && !task.cancelled) {
-      const earliest = earliestStartFromPredecessors(task, adj, leafById, cal, project);
-      const constrained = applyConstraint(task, earliest, cal);
+      const fromPreds = earliestStartFromPredecessors(task, adj, leafById, cal);
+      const constrained = applyConstraint(task, fromPreds, project.startDate, cal);
       task.start = cal.nextWorkingDay(constrained);
       task.end = task.isMilestone
         ? task.start
@@ -66,13 +66,11 @@ function earliestStartFromPredecessors(
   adj: ReturnType<typeof buildAdjacency>,
   leafById: Map<TaskId, Task>,
   cal: WorkingCalendar,
-  project: Project,
-): ISODate {
+): ISODate | null {
   const links: Dependency[] = adj.predecessors.get(task.id) ?? [];
-  if (links.length === 0) {
-    // No predecessors: anchor to the project start.
-    return project.startDate;
-  }
+  // No predecessors: the caller decides the anchor (project start or the
+  // user's own date constraint).
+  if (links.length === 0) return null;
 
   const candidates: ISODate[] = [];
   for (const link of links) {
@@ -105,11 +103,32 @@ function earliestStartFromPredecessors(
     }
   }
   // Every predecessor cancelled: behave like a task without predecessors.
-  return maxISO(candidates) ?? project.startDate;
+  return maxISO(candidates);
 }
 
 /** Apply a date constraint on top of the dependency-derived earliest start. */
-function applyConstraint(task: Task, earliest: ISODate, cal: WorkingCalendar): ISODate {
+/**
+ * Apply a date constraint on top of the dependency-derived earliest start
+ * (`fromPreds`, null when nothing constrains the task).
+ *
+ * The project start only anchors ASAP tasks. A date the user set (by dragging,
+ * typing or moving a whole group) wins over it, so tasks can be moved before
+ * the project start; previously SNET was clamped to the project start and a
+ * group sitting at the start snapped back when dragged left.
+ */
+function applyConstraint(
+  task: Task,
+  fromPreds: ISODate | null,
+  projectStart: ISODate,
+  cal: WorkingCalendar,
+): ISODate {
+  if (task.constraint === 'snet' && task.constraintDate) {
+    return fromPreds && fromPreds > task.constraintDate ? fromPreds : task.constraintDate;
+  }
+  return applyConstraintTo(task, fromPreds ?? projectStart, cal);
+}
+
+function applyConstraintTo(task: Task, earliest: ISODate, cal: WorkingCalendar): ISODate {
   switch (task.constraint) {
     case 'snet':
       // Start No Earlier Than: cannot precede the anchor.

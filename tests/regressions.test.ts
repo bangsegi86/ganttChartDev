@@ -245,3 +245,55 @@ describe('loading and saving', () => {
     expect(useProjectStore.getState().past).toHaveLength(0);
   });
 });
+
+describe('group (summary) drag moves every child', () => {
+  const setup = async () => {
+    const { useProjectStore } = await import('@/app/store/useProjectStore');
+    const p = createDemoProject();
+    p.startDate = '2026-01-05';
+    p.holidays = [];
+    p.calendar = { ...p.calendar, workingWeekdays: [1, 2, 3, 4, 5], mode: 'working' };
+    const leaf = (id: string, start: string, end: string, dur: number, order: number): Task =>
+      ({ ...task(id, 'G', start, end, order), manuallyScheduled: false, durationDays: dur } as Task);
+    p.tasks = [
+      { ...task('G', null, '2026-01-05', '2026-01-05'), manuallyScheduled: false } as Task,
+      leaf('c1', '2026-01-05', '2026-01-09', 5, 0),
+      leaf('c2', '2026-01-12', '2026-01-14', 3, 1),
+      leaf('c3', '2026-01-05', '2026-01-06', 2, 2),
+    ];
+    p.dependencies = [{ id: 'd', fromId: 'c1', toId: 'c2', type: 'FS', lagDays: 0 }];
+    useProjectStore.getState().loadProject(p);
+    const dates = () => Object.fromEntries(
+      useProjectStore.getState().derived.project.tasks.map((t) => [t.id, [t.start, t.end]]),
+    );
+    return { store: useProjectStore, dates };
+  };
+
+  it('moves left even when the group sits at the project start', async () => {
+    const { store, dates } = await setup();
+    store.getState().moveSubtreeBy('G', -7);
+    expect(dates()).toEqual({
+      G: ['2025-12-29', '2026-01-07'],
+      c1: ['2025-12-29', '2026-01-02'],
+      c2: ['2026-01-05', '2026-01-07'],
+      c3: ['2025-12-29', '2025-12-30'],
+    });
+  });
+
+  it('moves right and keeps the internal dependency chain', async () => {
+    const { store, dates } = await setup();
+    store.getState().moveSubtreeBy('G', 7);
+    expect(dates()).toEqual({
+      G: ['2026-01-12', '2026-01-21'],
+      c1: ['2026-01-12', '2026-01-16'],
+      c2: ['2026-01-19', '2026-01-21'],
+      c3: ['2026-01-12', '2026-01-13'],
+    });
+  });
+
+  it('a single bar can also be dragged before the project start', async () => {
+    const { store, dates } = await setup();
+    store.getState().moveTaskBy('c3', -7);
+    expect(dates().c3).toEqual(['2025-12-29', '2025-12-30']);
+  });
+});

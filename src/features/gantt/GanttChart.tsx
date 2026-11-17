@@ -532,6 +532,19 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   // Mouse down / drag / up
   // --------------------------------------------------------------------------
 
+  /*
+   * Window-level drag listeners must keep the same identity for the whole
+   * gesture. The handlers below are re-created whenever the render model
+   * changes — and pressing on a bar selects it, which changes the model — so
+   * registering them directly let the cleanup effect detach them the moment a
+   * drag began: bars (single or group) never moved. These stable wrappers
+   * always forward to the latest handler instead.
+   */
+  const onWindowMoveRef = useRef<(e: MouseEvent) => void>(() => {});
+  const onWindowUpRef = useRef<(e: MouseEvent) => void>(() => {});
+  const windowMoveListener = useCallback((e: MouseEvent) => onWindowMoveRef.current(e), []);
+  const windowUpListener = useCallback((e: MouseEvent) => onWindowUpRef.current(e), []);
+
   const onMouseDown = (e: React.MouseEvent) => {
     const scroller = scrollerRef.current!;
     const store = useProjectStore.getState();
@@ -554,8 +567,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       };
       setDomCursor('grabbing');
       e.preventDefault();
-      window.addEventListener('mousemove', onWindowMove);
-      window.addEventListener('mouseup', onWindowUp);
+      window.addEventListener('mousemove', windowMoveListener);
+      window.addEventListener('mouseup', windowUpListener);
       return;
     }
 
@@ -591,8 +604,8 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       setDomCursor('ew-resize');
     }
 
-    window.addEventListener('mousemove', onWindowMove);
-    window.addEventListener('mouseup', onWindowUp);
+    window.addEventListener('mousemove', windowMoveListener);
+    window.addEventListener('mouseup', windowUpListener);
   };
 
   const onWindowMove = useCallback(
@@ -684,21 +697,23 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       }
 
       dragRef.current = NO_DRAG;
-      window.removeEventListener('mousemove', onWindowMove);
-      window.removeEventListener('mouseup', onWindowUp);
+      window.removeEventListener('mousemove', windowMoveListener);
+      window.removeEventListener('mouseup', windowUpListener);
       draw();
     },
-    [draw, onWindowMove, hideTooltip, showToast, setDomCursor],
+    [draw, hideTooltip, showToast, setDomCursor, windowMoveListener, windowUpListener],
   );
+  onWindowMoveRef.current = onWindowMove;
+  onWindowUpRef.current = onWindowUp;
 
   // Safety cleanup: remove any lingering global drag listeners if the component
   // unmounts mid-drag (e.g. view switch while dragging).
   useEffect(() => {
     return () => {
-      window.removeEventListener('mousemove', onWindowMove);
-      window.removeEventListener('mouseup', onWindowUp);
+      window.removeEventListener('mousemove', windowMoveListener);
+      window.removeEventListener('mouseup', windowUpListener);
     };
-  }, [onWindowMove, onWindowUp]);
+  }, [windowMoveListener, windowUpListener]);
 
   const onDoubleClick = (e: React.MouseEvent) => {
     const { bar } = hitTest(e.clientX, e.clientY);
