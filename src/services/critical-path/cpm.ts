@@ -17,15 +17,33 @@ export interface CriticalPathResult {
   projectDuration: number;
 }
 
+export interface CriticalPathOptions {
+  /**
+   * Working-day offset of each task's *scheduled* start from the project's
+   * earliest start. When given, it is a lower bound on early start, so tasks
+   * pushed later by constraints, drags or manual dates are analysed where they
+   * actually sit instead of all starting at day 0.
+   */
+  startOffset?: (task: Task) => number;
+}
+
 export function computeCriticalPath(
   tasks: Task[],
-  deps: Dependency[],
+  allDeps: Dependency[],
+  options: CriticalPathOptions = {},
 ): CriticalPathResult {
-  const leaves = leafTasks(tasks);
+  // Cancelled tasks (and links touching them) are out of the network.
+  const leaves = leafTasks(tasks).filter((t) => !t.cancelled);
   const ids = leaves.map((t) => t.id);
+  const idSet = new Set(ids);
+  const deps = allDeps.filter((d) => idSet.has(d.fromId) && idSet.has(d.toId));
   const dur = new Map<TaskId, number>(
     leaves.map((t) => [t.id, t.isMilestone ? 0 : Math.max(1, t.durationDays)]),
   );
+  const minStart = new Map<TaskId, number>();
+  if (options.startOffset) {
+    for (const t of leaves) minStart.set(t.id, Math.max(0, options.startOffset(t)));
+  }
   const adj = buildAdjacency(deps);
   const { order } = topologicalOrder(ids, deps);
 
@@ -36,7 +54,7 @@ export function computeCriticalPath(
   for (const id of order) {
     const d = dur.get(id) ?? 0;
     const preds = adj.predecessors.get(id) ?? [];
-    let es = 0;
+    let es = minStart.get(id) ?? 0;
     for (const link of preds) {
       const pES = ES.get(link.fromId) ?? 0;
       const pEF = EF.get(link.fromId) ?? 0;
@@ -61,7 +79,8 @@ export function computeCriticalPath(
     EF.set(id, es + d);
   }
 
-  const projectDuration = Math.max(0, ...ids.map((id) => EF.get(id) ?? 0));
+  let projectDuration = 0;
+  for (const id of ids) projectDuration = Math.max(projectDuration, EF.get(id) ?? 0);
 
   // Backward pass: latest dates. Terminal tasks may finish by project end.
   const LF = new Map<TaskId, number>();

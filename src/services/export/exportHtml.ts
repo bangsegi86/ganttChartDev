@@ -1,3 +1,4 @@
+import { todayISO } from '@/shared/date/dateUtils';
 import type { Project, TaskId, TaskSchedule } from '@/entities';
 import { buildVisibleRows } from '@/features/grid/treeModel';
 import { buildTimeline } from '@/features/gantt/timeline';
@@ -92,7 +93,7 @@ function buildHtmlContent(input: HtmlExportInput): string {
 
   const data = {
     projectName: project.name,
-    today: new Date().toISOString().slice(0, 10),
+    today: todayISO(),
     theme,
     defaultDayWidth: dayWidth,
     timeline: { start: timeline.start, end: timeline.end, totalDays: timeline.totalDays },

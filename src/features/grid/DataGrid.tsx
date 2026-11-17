@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Ban, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, ListPlus, Lock, PanelLeftClose, PanelLeftOpen, RotateCcw } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
-import { buildVisibleRows, type VisibleRow } from './treeModel';
+import { buildVisibleRows, filterRowsByName, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
 import { HEADER_HEIGHT, SCROLL_BOTTOM_PADDING } from '@/features/gantt/layout';
 import { cn } from '@/shared/ui/cn';
@@ -164,7 +164,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
 
   // --- state ---
   const [columns, setColumns]       = useState(DEFAULT_COLUMNS);
-  const [filter, setFilter]         = useState('');
+  const filter                      = useProjectStore((s) => s.view.nameFilter);
+  const setFilter                   = useProjectStore((s) => s.setNameFilter);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [contextMenu, setContextMenu]   = useState<{ x: number; y: number; taskId: string } | null>(null);
   const [groupSubmenuOpen, setGroupSubmenuOpen] = useState(false);
@@ -206,11 +207,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const visibleTasks = useVisibleTasks();
   const allRows = useMemo(() => buildVisibleRows(visibleTasks), [visibleTasks]);
   const hasParents  = useMemo(() => allRows.some((r) => r.hasChildren), [allRows]);
-  const rows = useMemo(() => {
-    if (!filter.trim()) return allRows;
-    const q = filter.trim().toLowerCase();
-    return allRows.filter((r) => r.task.name.toLowerCase().includes(q));
-  }, [allRows, filter]);
+  const rows = useMemo(() => filterRowsByName(allRows, filter), [allRows, filter]);
 
   // --- ref sync effects ---
   useEffect(() => { rowsRef.current = rows; },                       [rows]);
@@ -225,14 +222,24 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   useEffect(() => { resourcesRef.current = resources; },               [resources]);
 
   // --- scroll sync (gantt → grid) ---
-  useEffect(() => {
+  // Latest shared offset, read by the deferred re-sync below.
+  const latestScrollTopRef = useRef(scrollTop);
+  latestScrollTopRef.current = scrollTop;
+  /** Offset we last wrote programmatically; its scroll event is an echo, not user input. */
+  const lastSyncedTopRef = useRef<number | null>(null);
+  const applyScrollSync = useCallback(() => {
     const el = scrollerRef.current;
-    if (!el || Math.abs(el.scrollTop - scrollTop) <= 0.5) return;
-    if (isUserScrollingRef.current) return;
+    const target = latestScrollTopRef.current;
+    if (!el || Math.abs(el.scrollTop - target) <= 0.5) return;
     isSyncingRef.current = true;
-    el.scrollTop = scrollTop;
+    el.scrollTop = target;
+    lastSyncedTopRef.current = el.scrollTop;
     requestAnimationFrame(() => { isSyncingRef.current = false; });
-  }, [scrollTop]);
+  }, []);
+  useEffect(() => {
+    if (isUserScrollingRef.current) return; // re-applied when the user stops
+    applyScrollSync();
+  }, [scrollTop, applyScrollSync]);
 
   // --- close context menu on outside click ---
   useEffect(() => {
@@ -699,13 +706,22 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         ref={scrollerRef}
         className="relative flex-1 overflow-x-scroll overflow-y-auto"
         onScroll={(e) => {
+          const el = e.currentTarget;
+          // Keep header perfectly in sync with horizontal scroll
+          if (headerRef.current) headerRef.current.scrollLeft = el.scrollLeft;
           if (isSyncingRef.current) return;
+          // The browser may deliver the event for our own programmatic write
+          // after the RAF flag cleared; treating it as user input used to pause
+          // syncing and drop the pane's final position during fast scrolling.
+          if (lastSyncedTopRef.current !== null && Math.abs(el.scrollTop - lastSyncedTopRef.current) <= 0.5) return;
+          lastSyncedTopRef.current = null;
           isUserScrollingRef.current = true;
           if (clearUserScrollTimer.current) clearTimeout(clearUserScrollTimer.current);
-          clearUserScrollTimer.current = setTimeout(() => { isUserScrollingRef.current = false; }, 150);
-          onScrollTopChange(e.currentTarget.scrollTop);
-          // Keep header perfectly in sync with horizontal scroll
-          if (headerRef.current) headerRef.current.scrollLeft = e.currentTarget.scrollLeft;
+          clearUserScrollTimer.current = setTimeout(() => {
+            isUserScrollingRef.current = false;
+            applyScrollSync(); // catch up with any offset skipped meanwhile
+          }, 150);
+          onScrollTopChange(el.scrollTop);
         }}
         role="grid"
         aria-rowcount={rows.length}
@@ -1155,8 +1171,13 @@ const GridRow = memo(function GridRow({
   onContextMenu,
 }: GridRowProps) {
   const { task, depth, hasChildren, wbs } = row;
-  const project    = useProjectStore((s) => s.derived.project);
-  const taskGroups = project.viewGroups.filter((g) => g.taskIds.includes(task.id));
+  // Subscribe to view groups only (not the whole project) so this memoised row
+  // re-renders just when its own task or the groups change.
+  const viewGroups = useProjectStore((s) => s.derived.project.viewGroups);
+  const taskGroups = useMemo(
+    () => viewGroups.filter((g) => g.taskIds.includes(task.id)),
+    [viewGroups, task.id],
+  );
 
   return (
     <div
@@ -1262,7 +1283,26 @@ const GridRow = memo(function GridRow({
       })}
     </div>
   );
-});
+}, gridRowPropsEqual);
+
+/**
+ * `row` wrappers are rebuilt whenever the visible-row list changes, so compare
+ * their contents instead of identity. With structural sharing in the store an
+ * unchanged task keeps its object identity, so only edited rows re-render.
+ */
+function gridRowPropsEqual(
+  a: GridRowProps,
+  b: GridRowProps,
+): boolean {
+  for (const key of Object.keys(a) as (keyof typeof a)[]) {
+    if (key === 'row') continue;
+    if (a[key] !== b[key]) return false;
+  }
+  const ra = a.row;
+  const rb = b.row;
+  return ra === rb || (ra.task === rb.task && ra.depth === rb.depth
+    && ra.hasChildren === rb.hasChildren && ra.wbs === rb.wbs && ra.index === rb.index);
+}
 
 // ---------------------------------------------------------------------------
 // PriorityCell / AssigneeCell

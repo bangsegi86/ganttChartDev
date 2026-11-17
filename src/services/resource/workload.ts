@@ -34,10 +34,11 @@ export function computeWorkload(project: Project): ResourceWorkload[] {
     return daily.get(id)!;
   };
 
+  const parentIds = new Set(project.tasks.map((t) => t.parentId).filter(Boolean));
   for (const task of project.tasks) {
-    if (task.isMilestone || task.assigneeIds.length === 0) continue;
+    if (task.isMilestone || task.cancelled || task.assigneeIds.length === 0) continue;
     // Skip summary rows (their children carry the real assignments).
-    if (project.tasks.some((t) => t.parentId === task.id)) continue;
+    if (parentIds.has(task.id)) continue;
     const share = hoursPerDay / task.assigneeIds.length;
     let cursor = task.start;
     let guard = 0;

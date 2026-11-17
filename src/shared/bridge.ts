@@ -35,24 +35,6 @@ const fallback: AppBridge = {
     confirmClose: () => {},
     onAction: () => () => {},
   },
-  persistence: {
-    async save(id, json) {
-      lsSet(`project:${id}`, json);
-      const list = JSON.parse(lsGet('project:index') ?? '[]') as string[];
-      if (!list.includes(id)) lsSet('project:index', JSON.stringify([...list, id]));
-      return { ok: true };
-    },
-    async load(id) {
-      return { ok: true, json: lsGet(`project:${id}`) };
-    },
-    async list() {
-      return JSON.parse(lsGet('project:index') ?? '[]') as string[];
-    },
-    async delete(id) {
-      lsSet(`project:${id}`, '');
-      return { ok: true };
-    },
-  },
   autosave: {
     async write(json) {
       lsSet('autosave:latest', json);

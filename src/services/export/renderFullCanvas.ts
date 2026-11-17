@@ -1,3 +1,4 @@
+import { todayISO } from '@/shared/date/dateUtils';
 import type { Project, TaskId, TaskSchedule, BaselineEntry } from '@/entities';
 import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
 import { buildTimeline } from '@/features/gantt/timeline';
@@ -6,8 +7,22 @@ import { readPalette } from '@/features/gantt/colors';
 import { renderGanttBody, renderGanttHeader, type GanttRenderModel } from '@/features/gantt/renderGantt';
 import { HEADER_HEIGHT, ROW_HEIGHT } from '@/features/gantt/layout';
 
-/** Hard cap so we never allocate an un-drawable canvas. */
+/** Hard cap (CSS px) on the drawn chart so we never allocate an un-drawable canvas. */
 const MAX_DIM = 16000;
+/** Browser limits on the backing store: per side and total pixel area. */
+const MAX_CANVAS_SIDE = 16384;
+const MAX_CANVAS_AREA = 120_000_000;
+
+export interface FullRenderResult {
+  canvas: HTMLCanvasElement;
+  /** Device pixels per CSS pixel actually used (≤ 2, lower for huge charts). */
+  scale: number;
+  /** Device-pixel height of the header band (repeated on each PDF page). */
+  headerPx: number;
+  totalRows: number;
+  /** Rows that fit; fewer than `totalRows` means the image was cut off. */
+  drawnRows: number;
+}
 const NAME_COL_WIDTH = 240;
 
 export interface FullRenderInput {
@@ -24,7 +39,7 @@ export interface FullRenderInput {
  * canvas for high-resolution PNG/PDF export. The export zoom auto-reduces if
  * the timeline would exceed the canvas size limit.
  */
-export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
+export function renderFullCanvas(input: FullRenderInput): FullRenderResult {
   const { project, schedules, theme, showCritical, showBaseline } = input;
   // Exports show the full plan — expand every collapsed parent.
   const rows = buildVisibleRows(project.tasks, { includeCollapsed: true });
@@ -42,7 +57,15 @@ export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
   const totalW = Math.min(MAX_DIM, NAME_COL_WIDTH + timeline.width);
   const totalH = HEADER_HEIGHT + contentHeight;
 
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  // Hi-DPI rendering doubles each side; scale down so the backing store stays
+  // within browser limits (a 32000px canvas silently fails to draw).
+  const dpr = Math.max(0.5, Math.min(
+    2,
+    window.devicePixelRatio || 1,
+    MAX_CANVAS_SIDE / totalW,
+    MAX_CANVAS_SIDE / totalH,
+    Math.sqrt(MAX_CANVAS_AREA / (totalW * totalH)),
+  ));
   const canvas = document.createElement('canvas');
   canvas.width = Math.floor(totalW * dpr);
   canvas.height = Math.floor(totalH * dpr);
@@ -63,7 +86,7 @@ export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
     selected: new Set(),
     holidaySet: new Set(project.holidays.map((h) => h.date)),
     weekendDays: new Set([0, 6].filter((d) => !project.calendar.workingWeekdays.includes(d))),
-    today: new Date().toISOString().slice(0, 10),
+    today: todayISO(),
     showTodayLine: true,
     showCritical,
     showBaseline,
@@ -94,7 +117,13 @@ export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
   // Name column.
   drawNameColumn(ctx, rows, palette, totalH);
 
-  return canvas;
+  return {
+    canvas,
+    scale: dpr,
+    headerPx: Math.round(HEADER_HEIGHT * dpr),
+    totalRows: rows.length,
+    drawnRows: Math.min(rows.length, Math.floor(contentHeight / ROW_HEIGHT)),
+  };
 }
 
 function drawNameColumn(

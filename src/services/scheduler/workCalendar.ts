@@ -1,5 +1,12 @@
 import type { Holiday, WorkCalendar } from '@/entities';
-import { addDaysISO, diffDaysISO, weekdayOf, type ISODate } from '@/shared/date/dateUtils';
+import {
+  addDaysISO,
+  diffDaysISO,
+  fromDayNumber,
+  toDayNumber,
+  weekdayOf,
+  type ISODate,
+} from '@/shared/date/dateUtils';
 
 /**
  * Working-time math. The `WorkingCalendar` wraps a `WorkCalendar` config plus a
@@ -22,6 +29,14 @@ export class WorkingCalendar {
     this.holidaySet = new Set(
       config.excludeHolidays ? holidays.map((h) => h.date) : [],
     );
+  }
+
+  /** Working-day test on a day number (see `toDayNumber`). */
+  private isWorkingNum(n: number): boolean {
+    if (this.config.mode === 'calendar') return true;
+    if (!this.working.has((((n + 4) % 7) + 7) % 7)) return false;
+    if (this.holidaySet.size > 0 && this.holidaySet.has(fromDayNumber(n))) return false;
+    return true;
   }
 
   /** True if `iso` is a working day under the current calendar. */
@@ -63,8 +78,19 @@ export class WorkingCalendar {
     if (this.config.mode === 'calendar') {
       return addDaysISO(startISO, duration - 1);
     }
-    let cursor = this.nextWorkingDay(startISO);
-    let counted = 1; // the start day itself is the first working day
+    const first = this.nextWorkingDay(startISO);
+    const n0 = toDayNumber(first);
+    if (n0 !== null && this.working.size > 0) {
+      let n = n0;
+      let counted = 1; // the start day itself is the first working day
+      while (counted < duration) {
+        n++;
+        if (this.isWorkingNum(n)) counted++;
+      }
+      return fromDayNumber(n);
+    }
+    let cursor = first;
+    let counted = 1;
     while (counted < duration) {
       cursor = addDaysISO(cursor, 1);
       if (this.isWorkingDay(cursor)) counted++;
@@ -81,6 +107,15 @@ export class WorkingCalendar {
     if (n === 0) return this.nextWorkingDay(iso);
     const step = n > 0 ? 1 : -1;
     let remaining = Math.abs(n);
+    const start = toDayNumber(iso);
+    if (start !== null && this.working.size > 0) {
+      let cur = start;
+      while (remaining > 0) {
+        cur += step;
+        if (this.isWorkingNum(cur)) remaining--;
+      }
+      return fromDayNumber(cur);
+    }
     let cursor = iso;
     while (remaining > 0) {
       cursor = addDaysISO(cursor, step);
@@ -97,6 +132,13 @@ export class WorkingCalendar {
     if (endISO < startISO) return 0;
     if (this.config.mode === 'calendar') {
       return diffDaysISO(startISO, endISO) + 1;
+    }
+    const a = toDayNumber(startISO);
+    const b = toDayNumber(endISO);
+    if (a !== null && b !== null) {
+      let count = 0;
+      for (let n = a; n <= b; n++) if (this.isWorkingNum(n)) count++;
+      return count;
     }
     let count = 0;
     let cursor = startISO;

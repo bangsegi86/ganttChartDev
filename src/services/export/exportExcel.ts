@@ -101,15 +101,15 @@ export async function exportExcel(
   });
 
   if (ganttInput) {
-    const ganttCanvas = renderFullCanvas(ganttInput);
+    const { canvas: ganttCanvas, scale } = renderFullCanvas(ganttInput);
     const ganttBase64 = ganttCanvas.toDataURL('image/png').split(',')[1]!;
     const ws2 = wb.addWorksheet('간트 차트');
     const imageId = wb.addImage({ base64: ganttBase64, extension: 'png' });
     ws2.addImage(imageId, {
       tl: { col: 0, row: 0 },
       ext: {
-        width: ganttCanvas.width / (window.devicePixelRatio || 1),
-        height: ganttCanvas.height / (window.devicePixelRatio || 1),
+        width: ganttCanvas.width / scale,
+        height: ganttCanvas.height / scale,
       },
     } as Parameters<typeof ws2.addImage>[1]);
   }

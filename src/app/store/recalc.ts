@@ -1,7 +1,9 @@
 import type { Project, TaskId, TaskSchedule } from '@/entities';
 import { scheduleProject } from '@/services/scheduler/scheduleEngine';
 import { computeCriticalPath } from '@/services/critical-path/cpm';
-import { maxISO } from '@/shared/date/dateUtils';
+import { maxISO, minISO } from '@/shared/date/dateUtils';
+import { WorkingCalendar } from '@/services/scheduler/workCalendar';
+import { leafTasks } from '@/services/dependency/graph';
 
 /** Derived, read-only analysis recomputed whenever the project changes. */
 export interface DerivedSchedule {
@@ -28,8 +30,18 @@ export function recalc(input: Project): DerivedSchedule {
   };
   const { tasks, cyclicTaskIds } = scheduleProject(normalized);
   const project: Project = { ...normalized, tasks };
-  const cpm = computeCriticalPath(tasks, project.dependencies);
-  const projectFinish = maxISO(tasks.map((t) => t.end));
+  // Feed CPM the real scheduled starts (as working-day offsets from the
+  // earliest active start) so the critical path matches what is drawn.
+  const cal = new WorkingCalendar(project.calendar, project.holidays);
+  const activeLeaves = leafTasks(tasks).filter((t) => !t.cancelled);
+  const base = minISO(activeLeaves.map((t) => t.start));
+  const startOffset = base
+    ? (t: { start: string }) =>
+        cal.workingDaysBetween(base, t.start) - (cal.isWorkingDay(t.start) ? 1 : 0)
+    : undefined;
+  const cpm = computeCriticalPath(tasks, project.dependencies, { startOffset });
+  const active = tasks.filter((t) => !t.cancelled);
+  const projectFinish = maxISO((active.length > 0 ? active : tasks).map((t) => t.end));
   return {
     project,
     schedules: cpm.schedules,

@@ -16,7 +16,6 @@ export interface FileFilter {
 type MenuAction =
   | 'menu:new-project'
   | 'menu:open-file'
-  | 'menu:open-projects'
   | 'menu:save'
   | 'menu:save-as'
   | 'menu:export-excel'
@@ -38,7 +37,6 @@ const bridge = {
       const actions: MenuAction[] = [
         'menu:new-project',
         'menu:open-file',
-        'menu:open-projects',
         'menu:save',
         'menu:save-as',
         'menu:export-excel',
@@ -59,15 +57,6 @@ const bridge = {
       });
       return () => listeners.forEach(({ ch, fn }) => ipcRenderer.removeListener(ch, fn));
     },
-  },
-  persistence: {
-    save: (id: string, json: string): Promise<PersistenceResult> =>
-      ipcRenderer.invoke('persistence:save', id, json),
-    load: (id: string): Promise<PersistenceResult> =>
-      ipcRenderer.invoke('persistence:load', id),
-    list: (): Promise<string[]> => ipcRenderer.invoke('persistence:list'),
-    delete: (id: string): Promise<PersistenceResult> =>
-      ipcRenderer.invoke('persistence:delete', id),
   },
   autosave: {
     write: (json: string): Promise<PersistenceResult> =>

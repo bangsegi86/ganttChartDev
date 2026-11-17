@@ -50,9 +50,11 @@ export function topologicalOrder(
   const queue: TaskId[] = [];
   for (const [id, deg] of inDegree) if (deg === 0) queue.push(id);
 
+  // Index-pointer queue: Array#shift is O(n) and made this sort O(n²).
   const order: TaskId[] = [];
-  while (queue.length > 0) {
-    const id = queue.shift()!;
+  let head = 0;
+  while (head < queue.length) {
+    const id = queue[head++]!;
     order.push(id);
     for (const next of out.get(id) ?? []) {
       const deg = (inDegree.get(next) ?? 0) - 1;
@@ -61,7 +63,8 @@ export function topologicalOrder(
     }
   }
 
-  const cyclic = taskIds.filter((id) => !order.includes(id));
+  const ordered = new Set(order);
+  const cyclic = taskIds.filter((id) => !ordered.has(id));
   return { order, cyclic };
 }
 

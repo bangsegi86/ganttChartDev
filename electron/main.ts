@@ -14,13 +14,6 @@ let mainWindow: BrowserWindow | null = null;
 /** Set to true once the renderer has confirmed it is safe to close the window. */
 let allowClose = false;
 
-// Persistence lives in the user-data directory so it survives app updates and
-// is writable on all platforms. We use a documents-style JSON store; the same
-// IPC contract can be backed by SQLite without touching the renderer.
-function dataDir(): string {
-  return path.join(app.getPath('userData'), 'projects');
-}
-
 function autosaveDir(): string {
   return path.join(app.getPath('userData'), 'autosave');
 }
@@ -75,41 +68,6 @@ function createWindow(): void {
   }
 }
 
-// --- IPC: project persistence -------------------------------------------------
-
-ipcMain.handle('persistence:save', async (_e, id: string, json: string) => {
-  await ensureDir(dataDir());
-  const file = path.join(dataDir(), `${sanitize(id)}.json`);
-  await fs.writeFile(file, json, 'utf-8');
-  return { ok: true, path: file };
-});
-
-ipcMain.handle('persistence:load', async (_e, id: string) => {
-  const file = path.join(dataDir(), `${sanitize(id)}.json`);
-  try {
-    const json = await fs.readFile(file, 'utf-8');
-    return { ok: true, json };
-  } catch {
-    return { ok: false, json: null };
-  }
-});
-
-ipcMain.handle('persistence:list', async () => {
-  await ensureDir(dataDir());
-  const entries = await fs.readdir(dataDir());
-  return entries.filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''));
-});
-
-ipcMain.handle('persistence:delete', async (_e, id: string) => {
-  const file = path.join(dataDir(), `${sanitize(id)}.json`);
-  try {
-    await fs.unlink(file);
-    return { ok: true };
-  } catch {
-    return { ok: false };
-  }
-});
-
 // --- IPC: autosave / crash recovery ------------------------------------------
 
 ipcMain.handle('autosave:write', async (_e, json: string) => {
@@ -160,6 +118,13 @@ ipcMain.handle(
 
 // --- IPC: project file sharing (공유 내보내기/가져오기) -------------------------
 
+/**
+ * Paths the user picked in a native open/save dialog during this session.
+ * `project:save-to-path` only writes to these, so the renderer cannot ask the
+ * main process to overwrite an arbitrary file.
+ */
+const userChosenPaths = new Set<string>();
+
 ipcMain.handle('project:export-file', async (_e, defaultName: string, json: string) => {
   const win = mainWindow ?? BrowserWindow.getFocusedWindow();
   const { canceled, filePath } = await dialog.showSaveDialog(win!, {
@@ -171,6 +136,7 @@ ipcMain.handle('project:export-file', async (_e, defaultName: string, json: stri
   });
   if (canceled || !filePath) return { ok: false };
   await fs.writeFile(filePath, json, 'utf-8');
+  userChosenPaths.add(path.resolve(filePath));
   return { ok: true, path: filePath };
 });
 
@@ -185,6 +151,7 @@ ipcMain.handle('project:import-file', async () => {
   if (canceled || !filePaths[0]) return { ok: false, json: null, path: null };
   try {
     const json = await fs.readFile(filePaths[0], 'utf-8');
+    userChosenPaths.add(path.resolve(filePaths[0]));
     return { ok: true, json, path: filePaths[0] };
   } catch {
     return { ok: false, json: null, path: null };
@@ -192,6 +159,9 @@ ipcMain.handle('project:import-file', async () => {
 });
 
 ipcMain.handle('project:save-to-path', async (_e, filePath: string, json: string) => {
+  if (typeof filePath !== 'string' || !userChosenPaths.has(path.resolve(filePath))) {
+    return { ok: false, path: null, error: 'path-not-allowed' };
+  }
   try {
     const tmp = `${filePath}.tmp`;
     await fs.writeFile(tmp, json, 'utf-8');
@@ -201,10 +171,6 @@ ipcMain.handle('project:save-to-path', async (_e, filePath: string, json: string
     return { ok: false, path: null, error: String(err) };
   }
 });
-
-function sanitize(id: string): string {
-  return id.replace(/[^a-zA-Z0-9_-]/g, '_');
-}
 
 function send(channel: string) {
   mainWindow?.webContents.send(channel);
@@ -228,8 +194,8 @@ function buildKoreanMenu(): void {
     { label: '저장', accelerator: 'CmdOrCtrl+S', click: () => send('menu:save') },
     { label: '다른 이름으로 저장…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('menu:save-as') },
     { type: 'separator' },
-    { label: '파일로 내보내기 (.smgantt)…', accelerator: 'CmdOrCtrl+Shift+E', click: () => send('menu:share-export') },
-    { label: '파일 가져오기 (.smgantt)…', accelerator: 'CmdOrCtrl+Shift+I', click: () => send('menu:share-import') },
+    // Writes a copy without changing the file the window is editing.
+    { label: '사본 저장 (.smgantt)…', accelerator: 'CmdOrCtrl+Shift+E', click: () => send('menu:share-export') },
     { type: 'separator' },
     {
       label: '이미지/문서로 내보내기',

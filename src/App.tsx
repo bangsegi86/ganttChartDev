@@ -17,16 +17,14 @@ import { BaselineManager } from '@/features/dialogs/BaselineManager';
 import { ViewGroupManager } from '@/features/dialogs/ViewGroupManager';
 import { TaskInspector } from '@/features/dialogs/TaskInspector';
 import { ConfirmDeleteDialog } from '@/features/dialogs/ConfirmDeleteDialog';
-import { ProjectManagerDialog } from '@/features/dialogs/ProjectManagerDialog';
 import { MarkerManager } from '@/features/dialogs/MarkerManager';
 import { ViewFilterBanner } from '@/features/view/ViewFilterBanner';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
+import { useScrollSync } from '@/app/store/useScrollSync';
 import { Button } from '@/shared/ui/Button';
 import { bridge } from '@/shared/bridge';
-import { exportExcel } from '@/services/export/exportExcel';
-import { exportPdf, exportPng } from '@/services/export/exportImage';
 
-type DialogKind = 'projects' | 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | 'markers' | null;
+type DialogKind = 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | 'markers' | null;
 
 /**
  * Application shell. Wires the toolbar, split-pane grid+gantt (or resource
@@ -44,7 +42,6 @@ export default function App() {
 
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [scrollTop, setScrollTop] = useState(0);
   const [recovery, setRecovery] = useState<null | (() => void)>(null);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
 
@@ -89,14 +86,14 @@ export default function App() {
           state.newProject();
         } else if (action === 'menu:open-file') {
           await state.shareImport();
-        } else if (action === 'menu:open-projects') {
-          setDialog('projects');
         } else if (action === 'menu:save') {
           void state.saveProject();
         } else if (action === 'menu:save-as') {
           void state.saveAsProject();
         } else if (action === 'menu:export-excel') {
           state.showAppToast('Excel 내보내기 중...', 'success');
+          // Export libraries (ExcelJS, jsPDF) load on first use, not at startup.
+          const { exportExcel } = await import('@/services/export/exportExcel');
           await exportExcel(project, name, {
             project, schedules,
             zoom: state.view.zoom, theme: state.view.theme,
@@ -105,12 +102,16 @@ export default function App() {
           state.clearAppToast();
         } else if (action === 'menu:export-png') {
           state.showAppToast('PNG 이미지 내보내기 중...', 'success');
-          await exportPng({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
+          const { exportPng, warnIfTruncated } = await import('@/services/export/exportImage');
+          const r = await exportPng({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
           state.clearAppToast();
+          warnIfTruncated(r);
         } else if (action === 'menu:export-pdf') {
           state.showAppToast('PDF 내보내기 중...', 'success');
-          await exportPdf({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
+          const { exportPdf, warnIfTruncated } = await import('@/services/export/exportImage');
+          const r = await exportPdf({ project, schedules, zoom: state.view.zoom, theme: state.view.theme, showCritical: state.view.showCriticalPath, showBaseline: state.view.showBaseline }, name);
           state.clearAppToast();
+          warnIfTruncated(r);
         } else if (action === 'menu:zoom-in') {
           state.scaleDayWidth(1.2);
         } else if (action === 'menu:zoom-out') {
@@ -182,16 +183,15 @@ export default function App() {
           <GroupSummaryView />
         ) : (
           <>
-            <DataGrid width={gridWidth} scrollTop={scrollTop} onScrollTopChange={setScrollTop} />
+            <SyncedDataGrid width={gridWidth} />
             {!gridCollapsed && <SplitDivider />}
-            <GanttChart scrollTop={scrollTop} onScrollTopChange={setScrollTop} />
+            <SyncedGanttChart />
           </>
         )}
       </div>
 
       <StatusBar />
 
-      <ProjectManagerDialog open={dialog === 'projects'} onClose={() => setDialog(null)} />
       <HolidayManager open={dialog === 'holidays'} onClose={() => setDialog(null)} />
       <ResourceManager open={dialog === 'resources'} onClose={() => setDialog(null)} />
       <CalendarSettings open={dialog === 'calendar'} onClose={() => setDialog(null)} />
@@ -310,4 +310,18 @@ function ShortcutsTable() {
       )}
     </div>
   );
+}
+
+/** Grid pane bound to the shared scroll offset (keeps scroll re-renders local). */
+function SyncedDataGrid({ width }: { width: number }) {
+  const scrollTop = useScrollSync((s) => s.scrollTop);
+  const setScrollTop = useScrollSync((s) => s.setScrollTop);
+  return <DataGrid width={width} scrollTop={scrollTop} onScrollTopChange={setScrollTop} />;
+}
+
+/** Gantt pane bound to the shared scroll offset. */
+function SyncedGanttChart() {
+  const scrollTop = useScrollSync((s) => s.scrollTop);
+  const setScrollTop = useScrollSync((s) => s.setScrollTop);
+  return <GanttChart scrollTop={scrollTop} onScrollTopChange={setScrollTop} />;
 }

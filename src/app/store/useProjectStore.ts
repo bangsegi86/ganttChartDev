@@ -14,10 +14,13 @@ import type {
 } from '@/entities';
 import type { FilterMode } from '@/features/view/viewFilter';
 import { recalc, type DerivedSchedule } from './recalc';
+import { shareProject } from './structuralShare';
+import { normalizeProject } from './normalizeProject';
+import { WorkingCalendar } from '@/services/scheduler/workCalendar';
 import { wouldCreateCycle } from '@/services/dependency/graph';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
 import { bridge } from '@/shared/bridge';
-import { addDaysISO, diffDaysISO } from '@/shared/date/dateUtils';
+import { addDaysISO, diffDaysISO, todayISO } from '@/shared/date/dateUtils';
 import type { ZoomLevel } from '@/features/gantt/zoom';
 import { stepZoom } from '@/features/gantt/zoom';
 import { DEFAULT_ROW_HEIGHT } from '@/features/gantt/layout';
@@ -51,6 +54,8 @@ interface ViewState {
   dayWidthScale: number;
   /** Pixel height of each task row. Controls the vertical spacing between bars. */
   rowHeight: number;
+  /** Task-name search text. Applied to grid AND gantt so their rows stay aligned. */
+  nameFilter: string;
   /**
    * One-shot scroll request for the gantt: when non-null the GanttChart will
    * scroll so this ISO date is near the left edge of the viewport, then clear
@@ -213,6 +218,8 @@ interface ProjectStore {
   setDayWidthScale: (scale: number) => void;
   /** Set the row height in pixels. Clamped to [20, 80]. */
   setRowHeight: (height: number) => void;
+  /** Set the task-name search text shared by the grid and gantt. */
+  setNameFilter: (text: string) => void;
   /**
    * Sort the direct children of the given task by their start date (ascending).
    * Sibling order values are reassigned; the subtrees themselves are untouched.
@@ -235,7 +242,7 @@ function emptyProject(): Project {
     schemaVersion: 1,
     id: nanoid(8),
     name: '새 프로젝트',
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate: todayISO(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     calendar: { workingWeekdays: [1, 2, 3, 4, 5], excludeHolidays: true, mode: 'working', hoursPerDay: 8 },
@@ -277,6 +284,35 @@ function parseTsvDataRows(text: string): string[][] {
   return hasHeader ? rows.slice(1) : rows;
 }
 
+/**
+ * Apply a user date edit the same way everywhere (grid typing, paste, bar drag
+ * or resize): an edited start becomes a "start no earlier than" constraint —
+ * the task stays where it was put but still follows predecessors that push it
+ * later — and the start→end span becomes the working-day duration. Tasks the
+ * user explicitly switched to manual scheduling keep their exact dates.
+ */
+function applyDateEdit(t: Task, cal: WorkingCalendar, startEdited: boolean): void {
+  if (t.end < t.start) t.end = t.start;
+  if (t.manuallyScheduled) return;
+  if (startEdited) {
+    t.constraint = 'snet';
+    t.constraintDate = t.start;
+  }
+  t.durationDays = t.isMilestone ? 0 : Math.max(1, cal.workingDaysBetween(t.start, t.end));
+}
+
+function calendarOf(d: Project): WorkingCalendar {
+  return new WorkingCalendar(d.calendar, d.holidays);
+}
+
+/** Task fields whose change can never move a date or the critical path. */
+const COSMETIC_FIELDS = new Set<keyof Task>(['name', 'notes', 'color', 'priority', 'assigneeIds', 'collapsed']);
+
+/** True when any patch touches a field the scheduler or CPM depends on. */
+function affectsSchedule(patches: Partial<Task>[]): boolean {
+  return patches.some((p) => Object.keys(p).some((k) => !COSMETIC_FIELDS.has(k as keyof Task)));
+}
+
 export const useProjectStore = create<ProjectStore>((set, get) => {
   const initialDerived = recalc(emptyProject());
 
@@ -285,20 +321,79 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
    * schedule, push the previous state onto the undo stack, and schedule an
    * autosave. This is the single write path for all document edits.
    */
-  function commit(mutator: (draft: Project) => void): void {
+  function commit(
+    mutator: (draft: Project) => void,
+    opts: { reschedule?: boolean } = {},
+  ): void {
     const state = get();
     const prev = state.derived.project;
     const draft: Project = structuredClone(prev);
     mutator(draft);
-    const derived = recalc(draft);
+    // Edits that cannot move any date (name, notes, colour…) skip the full
+    // schedule + CPM pass: the draft is a clone of an already-scheduled project.
+    const solved: DerivedSchedule =
+      opts.reschedule === false ? { ...state.derived, project: draft } : recalc(draft);
+    // Re-use unchanged objects from the previous version (cheap undo history,
+    // working React memoisation). A no-op edit leaves history untouched.
+    const project = shareProject(prev, solved.project);
+    if (project === prev) return;
+    const derived: DerivedSchedule = { ...solved, project };
     const past = [...state.past, prev].slice(-HISTORY_LIMIT);
     set({ derived, project: derived.project, past, future: [], dirty: true });
     scheduleAutosave();
   }
 
+  /**
+   * Throttled autosave: the first unsaved edit arms a timer and later edits do
+   * not reset it, so continuous editing is still snapshotted at least once per
+   * interval. (A debounce here meant nothing was saved while the user kept
+   * editing more often than once a minute.)
+   */
+  /**
+   * Change only tasks' `collapsed` flags. Collapse state is a view concern: it
+   * never affects the schedule, so it skips recalc, the undo history and the
+   * dirty flag. Only the touched task objects are copied.
+   */
+  function setCollapsed(next: (t: Task) => boolean): void {
+    const state = get();
+    let changed = false;
+    const tasks = state.derived.project.tasks.map((t) => {
+      const c = next(t);
+      if (c === t.collapsed) return t;
+      changed = true;
+      return { ...t, collapsed: c };
+    });
+    if (!changed) return;
+    const project = { ...state.derived.project, tasks };
+    set({ derived: { ...state.derived, project }, project });
+  }
+
+  /** Carry the current collapse state onto a history snapshot being restored. */
+  function keepCollapse(target: Project): Project {
+    const current = new Map(get().derived.project.tasks.map((t) => [t.id, t.collapsed]));
+    return {
+      ...target,
+      tasks: target.tasks.map((t) => {
+        const c = current.get(t.id);
+        return c === undefined || c === t.collapsed ? t : { ...t, collapsed: c };
+      }),
+    };
+  }
+
+  /**
+   * Stamp `updatedAt` before writing a file. Not a commit: saving must not add
+   * an undo step, re-run the scheduler, or mark the document dirty.
+   */
+  function stampUpdatedAt(): void {
+    const state = get();
+    const project = { ...state.derived.project, updatedAt: new Date().toISOString() };
+    set({ derived: { ...state.derived, project }, project });
+  }
+
   function scheduleAutosave(): void {
-    if (autosaveTimer) clearTimeout(autosaveTimer);
+    if (autosaveTimer) return;
     autosaveTimer = setTimeout(() => {
+      autosaveTimer = null;
       void get().flushAutosave();
     }, AUTOSAVE_INTERVAL_MS);
   }
@@ -332,6 +427,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       filterAssigneeIds: [],
       dayWidthScale: 1.0,
       rowHeight: DEFAULT_ROW_HEIGHT,
+      nameFilter: '',
       ganttScrollTo: null,
       appToast: null,
     },
@@ -347,7 +443,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     loadProject(project) {
-      const derived = recalc({ ...project, markers: project.markers ?? [] });
+      // Repair missing/invalid fields so hand-edited or older files cannot crash rendering.
+      const derived = recalc(normalizeProject(project));
       set((s) => ({
         derived,
         project: derived.project,
@@ -362,7 +459,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     async saveProject() {
       try {
-        commit((d) => { d.updatedAt = new Date().toISOString(); });
+        stampUpdatedAt();
         const project = get().derived.project;
         const json = JSON.stringify(project, null, 2);
         const fp = get().currentFilePath;
@@ -390,7 +487,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
 
     async saveAsProject() {
       try {
-        commit((d) => { d.updatedAt = new Date().toISOString(); });
+        stampUpdatedAt();
         const project = get().derived.project;
         const json = JSON.stringify(project, null, 2);
         const res = await bridge().project.exportFile(project.name || '간트프로젝트', json);
@@ -405,6 +502,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     async flushAutosave() {
+      // Nothing to recover if the document was saved since the timer was armed;
+      // writing anyway would raise a false recovery banner on next launch.
+      if (!get().dirty) return;
       await autosaveRepository.write(get().derived.project);
     },
 
@@ -444,9 +544,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         Object.assign(t, normalized);
         // If start moved past end, snap end to the new start.
         if (t.start > t.end) t.end = t.start;
-        // Editing dates directly implies a manual pin unless cleared.
-        if (patch.start || patch.end) t.manuallyScheduled = true;
-      });
+        if (normalized.start !== undefined || normalized.end !== undefined) {
+          applyDateEdit(t, calendarOf(d), normalized.start !== undefined);
+        }
+      }, { reschedule: affectsSchedule([patch]) });
+      // Tell the user when predecessors kept the task from moving where asked.
+      if (typeof patch.start === 'string') {
+        const want = /^\d{8}$/.test(patch.start)
+          ? `${patch.start.slice(0, 4)}-${patch.start.slice(4, 6)}-${patch.start.slice(6, 8)}`
+          : patch.start;
+        const got = get().derived.project.tasks.find((x) => x.id === id);
+        if (got && !got.manuallyScheduled && got.start > want) {
+          get().showAppToast(`선행 작업 때문에 시작일이 ${got.start}(으)로 조정되었습니다.`, 'error');
+        }
+      }
     },
 
     addTaskBefore(beforeId) {
@@ -569,19 +680,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     toggleCollapse(id) {
-      commit((d) => {
-        const t = d.tasks.find((x) => x.id === id);
-        if (t) t.collapsed = !t.collapsed;
-      });
+      setCollapsed((t) => (t.id === id ? !t.collapsed : t.collapsed));
     },
 
     expandAll() {
-      commit((d) => { for (const t of d.tasks) t.collapsed = false; });
+      setCollapsed(() => false);
     },
 
     collapseAll() {
       const parentIds = new Set(get().derived.project.tasks.map((t) => t.parentId).filter(Boolean));
-      commit((d) => { for (const t of d.tasks) if (parentIds.has(t.id)) t.collapsed = true; });
+      setCollapsed((t) => (parentIds.has(t.id) ? true : t.collapsed));
     },
 
     indentTask(id) {
@@ -643,8 +751,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           const next = addDaysISO(t.end, deltaDays);
           if (next >= t.start) t.end = next;
         }
-        t.durationDays = Math.max(1, diffDaysISO(t.start, t.end) + 1);
-        t.manuallyScheduled = true;
+        applyDateEdit(t, calendarOf(d), edge === 'start');
       });
     },
 
@@ -811,9 +918,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           if (!t) continue;
           t.start = addDaysISO(t.start, deltaDays);
           t.end = addDaysISO(t.end, deltaDays);
-          // Pin at the new position so the scheduler doesn't re-derive dates
-          // from predecessors and undo the move.
-          t.manuallyScheduled = true;
+          // Anchor at the new position (same rule as a single-bar drag) so the
+          // scheduler does not snap the move back, while predecessors that end
+          // later can still push it.
+          if (!t.manuallyScheduled) {
+            t.constraint = 'snet';
+            t.constraintDate = t.start;
+          }
         }
       });
     },
@@ -916,16 +1027,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
             name,
             start: startDate,
             end: endDate,
-            durationDays: Math.max(1, diffDaysISO(startDate, endDate) + 1),
+            durationDays: Math.max(1, calendarOf(d).workingDaysBetween(startDate, endDate)),
             progress,
             priority,
             assigneeIds: [],
             notes: '',
             isMilestone: false,
             collapsed: false,
-            constraint: 'asap',
-            constraintDate: null,
-            manuallyScheduled: !!(isValidISO(rawStart) && isValidISO(rawEnd)),
+            // Pasted dates anchor the task like a typed start (see applyDateEdit).
+            constraint: isValidISO(rawStart) ? 'snet' : 'asap',
+            constraintDate: isValidISO(rawStart) ? startDate : null,
+            manuallyScheduled: false,
             order: baseOrder + i,
             color: null,
             cancelled: false,
@@ -969,16 +1081,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
             name,
             start: startDate,
             end: endDate,
-            durationDays: Math.max(1, diffDaysISO(startDate, endDate) + 1),
+            durationDays: Math.max(1, calendarOf(d).workingDaysBetween(startDate, endDate)),
             progress,
             priority,
             assigneeIds: [],
             notes: '',
             isMilestone: false,
             collapsed: false,
-            constraint: 'asap',
-            constraintDate: null,
-            manuallyScheduled: !!(isValidISO(rawStart) && isValidISO(rawEnd)),
+            // Pasted dates anchor the task like a typed start (see applyDateEdit).
+            constraint: isValidISO(rawStart) ? 'snet' : 'asap',
+            constraintDate: isValidISO(rawStart) ? startDate : null,
+            manuallyScheduled: false,
             order: insertOrder + i,
             color: null,
             cancelled: false,
@@ -993,6 +1106,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const dataRows = parseTsvDataRows(tsvText);
       if (dataRows.length === 0 || taskIds.length === 0) return;
       commit((d) => {
+        const cal = calendarOf(d);
         taskIds.forEach((id, i) => {
           const cols = dataRows[i];
           if (!cols) return;
@@ -1006,13 +1120,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           if (isValidISO(rawStart) && isValidISO(rawEnd) && rawEnd >= rawStart) {
             task.start = rawStart;
             task.end = rawEnd;
-            task.durationDays = Math.max(1, diffDaysISO(rawStart, rawEnd) + 1);
-            task.manuallyScheduled = true;
+            applyDateEdit(task, cal, true);
           } else if (isValidISO(rawStart)) {
             const delta = diffDaysISO(task.start, rawStart);
             task.start = rawStart;
             task.end = addDaysISO(task.end, delta);
-            task.manuallyScheduled = true;
+            applyDateEdit(task, cal, true);
           }
           if (rawProgress?.trim()) {
             const p = parseInt(rawProgress, 10);
@@ -1031,17 +1144,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       commit((d) => {
         const norm = (v: string) =>
           /^\d{8}$/.test(v) ? `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}` : v;
+        const byId = new Map(d.tasks.map((x) => [x.id, x]));
+        const cal = calendarOf(d);
         for (const { id, patch } of updates) {
-          const t = d.tasks.find((x) => x.id === id);
+          const t = byId.get(id);
           if (!t) continue;
           const normalized: Partial<Task> = { ...patch };
           if (typeof normalized.start === 'string') normalized.start = norm(normalized.start);
           if (typeof normalized.end   === 'string') normalized.end   = norm(normalized.end);
           Object.assign(t, normalized);
           if (t.start > t.end) t.end = t.start;
-          if (patch.start !== undefined || patch.end !== undefined) t.manuallyScheduled = true;
+          if (normalized.start !== undefined || normalized.end !== undefined) {
+            applyDateEdit(t, cal, normalized.start !== undefined);
+          }
         }
-      });
+      }, { reschedule: affectsSchedule(updates.map((u) => u.patch)) });
     },
 
     // --- dependencies ---
@@ -1214,7 +1331,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const { past, derived, future } = get();
       if (past.length === 0) return;
       const prev = past[past.length - 1]!;
-      const newDerived = recalc(prev);
+      const solved = recalc(keepCollapse(prev));
+      const newDerived = { ...solved, project: shareProject(derived.project, solved.project) };
       set({
         derived: newDerived,
         project: newDerived.project,
@@ -1228,7 +1346,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const { future, derived, past } = get();
       if (future.length === 0) return;
       const next = future[0]!;
-      const newDerived = recalc(next);
+      const solved = recalc(keepCollapse(next));
+      const newDerived = { ...solved, project: shareProject(derived.project, solved.project) };
       set({
         derived: newDerived,
         project: newDerived.project,
@@ -1329,6 +1448,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
     setRowHeight(height) {
       set((s) => ({ view: { ...s.view, rowHeight: Math.max(20, Math.min(80, Math.round(height))) } }));
+    },
+
+    setNameFilter(text) {
+      set((s) => ({ view: { ...s.view, nameFilter: text } }));
     },
 
     sortChildrenByStart(parentId) {

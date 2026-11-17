@@ -26,8 +26,8 @@ Electron + React + TypeScript(strict) 기반이며, 대규모 일정(작업 10,0
 | **크리티컬 패스** | CPM 정·역방향 패스, Total/Free Float, 완료 예상일, 빨간색 강조 |
 | **리소스** | 담당자 등록/할당, 주별 업무량 차트, 일 capacity 초과(과부하) 감지 |
 | **베이스라인** | 계획 스냅샷 저장, 계획 vs 실제 편차/지연률, 간트 오버레이 |
-| **Export** | Excel(.xlsx, 스타일·색상·아웃라인), PNG(고해상도 전체 타임라인), PDF |
-| **신뢰성** | Undo/Redo(≥100단계), 1분 자동 저장, 비정상 종료 복구 배너 |
+| **Export** | Excel(.xlsx, 스타일·색상·아웃라인), PNG(고해상도 전체 타임라인), PDF(A4 가로, 여러 쪽 분할), 인터랙티브 HTML |
+| **신뢰성** | Undo/Redo(≥100단계, 변경되지 않은 데이터는 공유), 편집 후 최대 1분 내 자동 저장, 비정상 종료 복구 배너, 손상된 파일 자동 보정 |
 | **UX** | 라이트/다크 테마(즉시 전환), 전역 단축키, 키보드 포커스, 고대비 포커스 링 |
 
 ---
@@ -39,8 +39,8 @@ Electron + React + TypeScript(strict) 기반이며, 대규모 일정(작업 10,0
 - **상태관리**: Zustand (단일 write 경로 + 파생 스케줄 캐시)
 - **스타일**: Tailwind CSS (CSS 변수 기반 테마 토큰)
 - **날짜**: date-fns (ISO `YYYY-MM-DD` 문자열 모델)
-- **저장**: 로컬 JSON (Electron `userData`), 브라우저 fallback은 localStorage —
-  동일한 `Repository` 인터페이스 뒤에 SQLite 구현을 끼워 넣을 수 있습니다.
+- **저장**: 사용자가 고른 `.smgantt` 파일(JSON). 자동 저장본만 Electron `userData`에 두며,
+  브라우저 fallback은 localStorage를 사용합니다.
 - **Export**: ExcelJS, jsPDF, Canvas
 - **테스트**: Vitest
 
@@ -58,7 +58,7 @@ src/
     critical-path/   # CPM(크리티컬 패스 + Float)
     holiday/         # 대한민국 공휴일 생성기(대체공휴일 규칙)
     resource/        # 리소스 업무량/과부하 계산
-    persistence/     # 프로젝트 저장소 + 자동저장 저장소
+    persistence/     # 자동저장(비정상 종료 복구) 저장소
     export/          # Excel / PNG / PDF + 전체 캔버스 렌더
   features/
     grid/            # WBS 데이터 그리드(가상화, 인라인 편집)
@@ -106,10 +106,17 @@ npm run dist:win    # Windows NSIS 설치본(.exe)
 - **가상화**: 그리드·간트 모두 보이는 행/열만 렌더(스크롤 시 viewport 윈도잉).
 - **Canvas 레이어**: 헤더/본문 캔버스 분리, devicePixelRatio 대응, 보이는 막대만 그림.
 - **파생 캐시**: 스케줄·CPM 결과를 스토어에 캐시하고 `useMemo`로 트리/타임라인 재계산 최소화.
-- **무거운 전역 리렌더 방지**: 컴포넌트는 필요한 슬라이스만 selector로 구독.
+- **무거운 전역 리렌더 방지**: 컴포넌트는 필요한 슬라이스만 selector로 구독하고, 스크롤 위치는
+  별도 스토어로 분리해 스크롤 시 그리드·간트만 다시 그립니다.
+- **정수 날짜 연산**: 일정 엔진은 날짜를 내부적으로 일 번호(정수)로 계산합니다.
+- **구조적 공유**: 편집 시 바뀌지 않은 작업 객체를 재사용해 Undo 메모리와 행 리렌더를 줄입니다.
+- **지연 로딩**: ExcelJS·jsPDF 등 내보내기 라이브러리는 처음 내보낼 때 불러옵니다.
+
+측정값(작업 10,000개, 의존성 9,800개, Node 기준): 전체 재계산 약 70ms, 이름 수정 약 35ms,
+접기/펼치기 1ms 미만.
 
 대규모 데이터 점검용으로 `createLargeProject(phaseCount, tasksPerPhase)`
-(`src/data/sampleData.ts`)를 제공합니다(기본 200×50 = 10,000 작업).
+(`tests/fixtures/sampleData.ts`)를 제공합니다(기본 200×50 = 10,000 작업).
 
 ---
 
