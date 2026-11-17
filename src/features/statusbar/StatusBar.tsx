@@ -6,14 +6,11 @@ import { useProjectStore } from '@/app/store/useProjectStore';
 export function StatusBar() {
   const derived = useProjectStore((s) => s.derived);
   const selectedCount = useProjectStore((s) => s.selectedTaskIds.size);
-  const dirty = useProjectStore((s) => s.dirty);
   const project = derived.project;
 
   const taskCount = project.tasks.length;
   const criticalCount = derived.criticalPath.length;
   const cyclic = derived.cyclicTaskIds.length;
-
-  const fmt = (iso?: string) => (iso ? iso.slice(0, 10) : '—');
 
   return (
     <div
@@ -39,22 +36,18 @@ export function StatusBar() {
       )}
 
       <div className="ml-auto flex items-center gap-3">
-        <span title={`마지막 저장: ${fmt(project.updatedAt)}`}>저장 {fmt(project.updatedAt)}</span>
         {cyclic > 0 ? (
           <span
             className="flex items-center gap-1 rounded px-1.5 py-0.5 font-medium text-critical bg-critical/10 border border-critical/30"
             {...tipProps('연결이 돌고 있습니다', 'A→B→A처럼 서로를 기다리는 연결이 있어 일정을 계산할 수 없습니다. 연결선을 클릭해 Delete로 하나를 지우세요.')}
           >
-            <AlertTriangle size={11} /> 순환 의존성 {cyclic}개
+            <AlertTriangle size={11} /> 서로 기다리는 연결 {cyclic}개
           </span>
         ) : (
           <span className="flex items-center gap-1 text-success" {...tipProps('일정 계산 정상', '연결에 문제가 없습니다.')}>
-            <CircleCheck size={11} /> 정상
+            <CircleCheck size={11} /> 일정 계산 정상
           </span>
         )}
-        <span className={`font-medium ${dirty ? 'text-amber-400' : 'text-success'}`}>
-          {dirty ? '● 미저장' : '저장됨'}
-        </span>
       </div>
     </div>
   );

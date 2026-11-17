@@ -43,6 +43,8 @@ interface ViewState {
   gridWidth: number;
   /** Whether the left grid panel is collapsed to a thin strip. */
   gridCollapsed: boolean;
+  /** Whether the app's left navigation sidebar is reduced to icons. */
+  sidebarCollapsed: boolean;
   activeView: ActiveView;
   /** Display filter: show all tasks, a view group, or a focused selection. */
   filterMode: FilterMode;
@@ -223,6 +225,7 @@ interface ProjectStore {
   toggleTodayLine: () => void;
   setGridWidth: (width: number) => void;
   toggleGridCollapse: () => void;
+  toggleSidebar: () => void;
   setActiveView: (view: ActiveView) => void;
   /** Show all tasks, a specific view group, the current selection, or tasks by assignee. */
   setViewFilter: (mode: FilterMode, groupId?: string | null, assigneeIds?: string[]) => void;
@@ -507,13 +510,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     recoveryAvailable: false,
     currentFilePath: null,
     view: {
-      theme: 'dark',
+      theme: 'light',
       zoom: 'day',
       showCriticalPath: true,
       showBaseline: false,
       gridCollapsed: false,
+      sidebarCollapsed: false,
       showTodayLine: true,
-      gridWidth: 460,
+      gridWidth: 520,
       activeView: 'gantt',
       filterMode: 'all',
       filterGroupId: null,
@@ -1598,6 +1602,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
     toggleGridCollapse() {
       set((s) => ({ view: { ...s.view, gridCollapsed: !s.view.gridCollapsed } }));
+    },
+
+    toggleSidebar() {
+      set((s) => ({ view: { ...s.view, sidebarCollapsed: !s.view.sidebarCollapsed } }));
     },
     setActiveView(activeView) {
       set((s) => ({ view: { ...s.view, activeView } }));

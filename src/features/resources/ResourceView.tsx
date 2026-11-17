@@ -17,7 +17,9 @@ export function ResourceView() {
 
   return (
     <div className="h-full w-full flex-1 overflow-auto bg-surface p-4">
-      <h2 className="mb-3 text-sm font-semibold text-content">리소스 업무량</h2>
+      <p className="mb-3 text-xs text-content-muted">
+        막대는 담당자마다 한 주에 잡힌 작업 시간입니다. 하루 근무시간(왼쪽 메뉴 → 근무일 설정)을 넘는 날이 있으면 빨갛게 표시됩니다.
+      </p>
       {project.resources.length === 0 && (
         <p className="text-xs text-content-muted">담당자를 먼저 등록하세요.</p>
       )}

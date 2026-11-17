@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { useTheme } from '@/shared/hooks/useTheme';
 import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
-import { Toolbar } from '@/features/toolbar/Toolbar';
+import { Sidebar } from '@/features/shell/Sidebar';
+import { ActionBar, TopBar, ViewBar } from '@/features/shell/Bars';
+import { ChartHint } from '@/features/shell/ChartHint';
 import { StatusBar } from '@/features/statusbar/StatusBar';
 import { DataGrid } from '@/features/grid/DataGrid';
 import { GanttChart } from '@/features/gantt/GanttChart';
@@ -168,16 +170,16 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-full flex-col bg-surface text-content">
-      <Toolbar
-        onOpenHolidays={() => setDialog('holidays')}
+    <div className="flex h-full bg-surface text-content">
+      <Sidebar
         onOpenResources={() => setDialog('resources')}
         onOpenCalendar={() => setDialog('calendar')}
-        onOpenBaselines={() => setDialog('baselines')}
+        onOpenHolidays={() => setDialog('holidays')}
         onOpenViewGroups={() => setDialog('viewGroups')}
-        onOpenMarkers={() => setDialog('markers')}
         onOpenHelp={() => openHelp()}
       />
+      <main className="flex min-w-0 flex-1 flex-col">
+      <TopBar />
 
       {recovery && (
         <div className="flex items-center gap-3 border-b border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs text-content">
@@ -191,6 +193,12 @@ export default function App() {
         </div>
       )}
 
+      {activeView === 'gantt' && (
+        <>
+          <ViewBar onOpenBaselines={() => setDialog('baselines')} onOpenMarkers={() => setDialog('markers')} />
+          <ActionBar />
+        </>
+      )}
       <ViewFilterBanner onManageGroups={() => setDialog('viewGroups')} />
 
       <div className="flex min-h-0 flex-1">
@@ -204,12 +212,16 @@ export default function App() {
           <>
             <SyncedDataGrid width={gridWidth} />
             {!gridCollapsed && <SplitDivider />}
-            <SyncedGanttChart />
+            <div className="relative flex min-w-0 flex-1">
+              <SyncedGanttChart />
+              <ChartHint />
+            </div>
           </>
         )}
       </div>
 
       <StatusBar />
+      </main>
 
       <HolidayManager open={dialog === 'holidays'} onClose={() => setDialog(null)} />
       <ResourceManager open={dialog === 'resources'} onClose={() => setDialog(null)} />

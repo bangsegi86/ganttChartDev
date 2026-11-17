@@ -96,3 +96,17 @@ body {
 .animate-dialog-in {
   animation: dialog-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* Text never breaks inside a control, and Korean wraps between words only.
+   (A button label splitting onto two lines — "알겠/어요" — looks broken.) */
+button,
+[role='tab'],
+[role='menuitem'],
+kbd,
+select {
+  white-space: nowrap;
+}
+body {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}

@@ -62,7 +62,7 @@ export function GroupSummaryView() {
         <Layers size={32} className="text-content-muted" />
         <p className="text-sm text-content-muted">보기 그룹이 없습니다.</p>
         <p className="text-xs text-content-muted">
-          간트 뷰에서 작업을 선택하고 툴바의 그룹 버튼으로 그룹을 만들어 보세요.
+          간트 차트에서 작업을 오른쪽 클릭 → 보기 그룹, 또는 왼쪽 메뉴 &lsquo;보기 그룹&rsquo; 옆의 + 로 만들 수 있습니다.
         </p>
       </div>
     );
@@ -70,7 +70,7 @@ export function GroupSummaryView() {
 
   return (
     <div className="h-full w-full flex-1 overflow-auto bg-surface p-4">
-      <h2 className="mb-4 text-sm font-semibold text-content">그룹별 진척 현황</h2>
+      <p className="mb-4 text-xs text-content-muted">보기 그룹마다 진척률, 지연된 작업, 기간을 보여 줍니다.</p>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((s) => {
           const isActive = filterMode === 'group' && filterGroupId === s.group.id;

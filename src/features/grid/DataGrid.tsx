@@ -5,6 +5,7 @@ import { Ban, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, Grip
 import { parseTsvDataRows, useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, filterRowsByName, type VisibleRow } from './treeModel';
 import { askChoice } from '@/shared/ui/ChoiceDialog';
+import { gridCommands, useCutStore } from './gridCommands';
 import { parseDateInput } from '@/shared/date/parseDateInput';
 import { useVisibleTasks } from '@/features/view/viewFilter';
 import { HEADER_HEIGHT, SCROLL_BOTTOM_PADDING } from '@/features/gantt/layout';
@@ -25,7 +26,7 @@ interface ColumnDef {
 }
 
 const DEFAULT_COLUMNS: ColumnDef[] = [
-  { key: 'wbs',      label: 'WBS',    width: 56,  align: 'right' },
+  { key: 'wbs',      label: '번호',   width: 72,  align: 'right' },
   { key: 'name',     label: '작업명', width: 220 },
   { key: 'start',    label: '시작',   width: 104 },
   { key: 'end',      label: '종료',   width: 104 },
@@ -169,12 +170,13 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   // --- state ---
   const [columns, setColumns]       = useState(DEFAULT_COLUMNS);
   const filter                      = useProjectStore((s) => s.view.nameFilter);
-  const setFilter                   = useProjectStore((s) => s.setNameFilter);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [contextMenu, setContextMenu]   = useState<{ x: number; y: number; taskId: string } | null>(null);
   const [groupSubmenuOpen, setGroupSubmenuOpen] = useState(false);
   /** Tasks marked for a cut/move (right-click 잘라내기). Empty = nothing cut. */
-  const [cutTaskIds, setCutTaskIds] = useState<Set<string>>(new Set());
+  // Shared so the action bar can show "N cut — click a row and press Ctrl+V".
+  const cutTaskIds = useCutStore((st) => st.ids);
+  const setCutTaskIds = useCutStore((st) => st.setIds);
   const cutRef = useRef(cutTaskIds);
   cutRef.current = cutTaskIds;
 
@@ -826,7 +828,15 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     // Capture phase ensures this runs before global shortcut listeners
     // (useKeyboardShortcuts) regardless of component mount order.
     window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
+    // Toolbar buttons reuse these exact shortcut paths.
+    gridCommands.run = (key, shift = false) => {
+      gridActiveRef.current = true;
+      onKey({
+        key, ctrlKey: true, metaKey: false, shiftKey: shift, altKey: false,
+        target: document.body, preventDefault: () => {}, stopPropagation: () => {},
+      } as unknown as KeyboardEvent);
+    };
+    return () => { window.removeEventListener('keydown', onKey, true); delete gridCommands.run; };
   }, []); // empty deps — all mutable values accessed via refs
 
   // ---------------------------------------------------------------------------
@@ -859,13 +869,9 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
     >
       {/* Filter + expand/collapse all */}
       <div className="flex items-center gap-1 border-b border-border px-2" style={{ height: 28 }}>
-        <input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="작업 검색…"
-          className="h-6 min-w-0 flex-1 rounded bg-surface-2 px-2 text-xs text-content outline-none placeholder:text-content-muted"
-          aria-label="작업 검색"
-        />
+        <span className="min-w-0 flex-1 truncate text-2xs text-content-muted">
+          {filter ? `'${filter}' 검색 결과 ${rows.length}개` : `작업 ${rows.length}개`}
+        </span>
         <button
           onClick={expandAll}
           disabled={!hasParents}
@@ -961,6 +967,16 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           </div>
         )}
         <div style={{ height: rows.length * rowHeight + SCROLL_BOTTOM_PADDING, minWidth: totalWidth, position: 'relative' }}>
+          {rows.length > 0 && !filter && (
+            <button
+              onClick={() => addTask()}
+              style={{ position: 'absolute', top: rows.length * rowHeight, left: 0, height: Math.min(rowHeight, 36) }}
+              className="flex w-full items-center gap-1.5 whitespace-nowrap pl-[84px] text-xs text-content-muted hover:bg-surface-2 hover:text-content"
+              {...tipProps('맨 아래에 작업 추가', '목록 맨 아래(최상위)에 새 작업을 만듭니다.')}
+            >
+              + 여기에 작업 추가
+            </button>
+          )}
           {visible.map((row, visIdx) => {
             const rowIdx      = first + visIdx;
             const inRange     = rangeInfo ? rowIdx >= rangeInfo.minRow && rowIdx <= rangeInfo.maxRow : false;
@@ -1469,7 +1485,18 @@ const GridRow = memo(function GridRow({
                 )}
               </div>
             ) : col.key === 'wbs' ? (
-              <span className="text-content-muted">{wbs}</span>
+              <span className="flex w-full items-center justify-between gap-1">
+                {/* Checkbox = discoverable multi-select (same as Ctrl+click). */}
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={() => {}}
+                  onMouseDown={(e) => { e.stopPropagation(); onSelect(task.id, true, e.shiftKey); }}
+                  aria-label={`${task.name} 선택`}
+                  className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-[rgb(var(--color-accent))]"
+                />
+                <span className="truncate text-content-muted">{wbs}</span>
+              </span>
             ) : col.key === 'duration' ? (
               <span>{task.isMilestone ? '—' : `${task.durationDays}d`}</span>
             ) : col.key === 'assignee' ? (
