@@ -37,10 +37,13 @@ export function BaselineManager({ open, onClose }: { open: boolean; onClose: () 
   })();
 
   return (
-    <Modal open={open} onClose={onClose} title="베이스라인" width={520}>
+    <Modal open={open} onClose={onClose} title="계획 비교 (베이스라인)" width={520}>
+      <p className="mb-3 rounded-md bg-surface px-3 py-2 text-2xs leading-relaxed text-content-muted">
+        지금 일정을 이름을 붙여 &lsquo;기준 계획&rsquo;으로 저장해 두세요. 나중에 그 기준 계획을 고르고 &lsquo;차트에 표시&rsquo;를 켜면, 막대 아래에 원래 계획이 회색 줄로 나타나 얼마나 밀렸는지 비교할 수 있습니다.
+      </p>
       <div className="mb-3 flex items-end gap-2">
         <label className="flex flex-1 flex-col text-2xs text-content-muted">
-          베이스라인 이름
+          기준 계획 이름
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -52,14 +55,15 @@ export function BaselineManager({ open, onClose }: { open: boolean; onClose: () 
           size="sm"
           variant="accent"
           onClick={() => {
-            capture(name.trim() || `베이스라인 ${project.baselines.length + 1}`);
+            capture(name.trim() || `기준 계획 ${project.baselines.length + 1}`);
             setName('');
           }}
         >
-          현재 계획 저장
+          지금 일정을 기준 계획으로 저장
         </Button>
-        <Button size="sm" active={showBaseline} onClick={toggleBaseline}>
-          {showBaseline ? <Eye size={14} /> : <EyeOff size={14} />} 오버레이
+        <Button size="sm" active={showBaseline} onClick={toggleBaseline}
+          tip="차트에 표시 (켜기/끄기)" tipDesc="선택한 기준 계획을 막대 아래 회색 줄로 겹쳐 보여 줍니다.">
+          {showBaseline ? <Eye size={14} /> : <EyeOff size={14} />} 차트에 표시
         </Button>
       </div>
 
@@ -80,7 +84,7 @@ export function BaselineManager({ open, onClose }: { open: boolean; onClose: () 
             <tr>
               <th className="p-2 text-left">이름</th>
               <th className="p-2 text-left">저장 시각</th>
-              <th className="p-2 text-center">활성</th>
+              <th className="p-2 text-center">비교에 사용</th>
               <th className="p-2" />
             </tr>
           </thead>
@@ -94,7 +98,7 @@ export function BaselineManager({ open, onClose }: { open: boolean; onClose: () 
                     type="radio"
                     checked={project.activeBaselineId === b.id}
                     onChange={() => setActive(b.id)}
-                    aria-label="활성 베이스라인"
+                    aria-label="이 기준 계획과 비교"
                   />
                 </td>
                 <td className="p-2 text-right">
@@ -107,7 +111,7 @@ export function BaselineManager({ open, onClose }: { open: boolean; onClose: () 
             {project.baselines.length === 0 && (
               <tr>
                 <td colSpan={4} className="p-4 text-center text-content-muted">
-                  저장된 베이스라인이 없습니다.
+                  아직 저장한 기준 계획이 없습니다. 위에서 이름을 넣고 저장해 보세요.
                 </td>
               </tr>
             )}

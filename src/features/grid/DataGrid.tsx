@@ -1,8 +1,10 @@
 import { createPortal } from 'react-dom';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { tipProps } from '@/shared/ui/Tooltip';
 import { Ban, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, ListPlus, Lock, PanelLeftClose, PanelLeftOpen, RotateCcw } from 'lucide-react';
-import { useProjectStore } from '@/app/store/useProjectStore';
+import { parseTsvDataRows, useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, filterRowsByName, type VisibleRow } from './treeModel';
+import { askChoice } from '@/shared/ui/ChoiceDialog';
 import { useVisibleTasks } from '@/features/view/viewFilter';
 import { HEADER_HEIGHT, SCROLL_BOTTOM_PADDING } from '@/features/gantt/layout';
 import { cn } from '@/shared/ui/cn';
@@ -548,7 +550,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
 
       if (key === 'v') {
         e.preventDefault();
-        void readClipboardText().then((text) => {
+        void readClipboardText().then(async (text) => {
           const trimmed = text.trim();
           if (!trimmed) return;
 
@@ -572,34 +574,122 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
             if (startR === -1 || startC === -1) return;
 
             const grid = parseTsvGrid(trimmed);
-            const updates: { id: string; patch: Partial<Task> }[] = [];
-
-            for (let dr = 0; dr < grid.length; dr++) {
-              const rowIdx = startR + dr;
-              if (rowIdx >= curRows.length) break; // don't auto-add rows during range paste
-              const taskId = curRows[rowIdx]?.task.id;
-              if (!taskId) break;
-              const rowVals = grid[dr] ?? [];
+            /** Turn one pasted line into a patch, column-aligned from the active cell. */
+            const rowPatch = (rowVals: string[]): Partial<Task> => {
               const merged: Partial<Task> = {};
               for (let dc = 0; dc < rowVals.length; dc++) {
-                const colIdx = startC + dc;
-                if (colIdx >= curCols.length) break;
-                const col = curCols[colIdx];
-                if (!col || !PASTEABLE_COLS.has(col.key)) continue;
+                const col = curCols[startC + dc];
+                if (!col) break;
+                if (!PASTEABLE_COLS.has(col.key)) continue;
                 const patch = parseCellPatch(col.key, rowVals[dc] ?? '', res);
                 if (patch) Object.assign(merged, patch);
               }
-              if (Object.keys(merged).length > 0) updates.push({ id: taskId, patch: merged });
+              return merged;
+            };
+
+            // Paste stays inside the start row's group: rows from the start row
+            // down until the list leaves that group (a shallower row). It used to
+            // run on into the next group and overwrite its title row.
+            const startRow = curRows[startR]!;
+            let end = startR;
+            while (end + 1 < curRows.length && curRows[end + 1]!.depth >= startRow.depth) end++;
+            const available = end - startR + 1;
+
+            let fill = Math.min(grid.length, available);
+            let extra = 0;
+            if (grid.length > available) {
+              const parentId = startRow.task.parentId;
+              const parentName = parentId
+                ? useProjectStore.getState().derived.project.tasks.find((t) => t.id === parentId)?.name
+                : null;
+              const where = parentName ? `'${parentName}' 그룹` : '목록';
+              const more = grid.length - available;
+              const pick = await askChoice({
+                title: '붙여넣을 행이 더 많습니다',
+                message: `복사한 내용은 ${grid.length}행인데, ${where}에는 선택한 행부터 ${available}행만 있습니다.`,
+                options: [
+                  {
+                    value: 'extend',
+                    primary: true,
+                    label: `${available}행에 붙여넣고, 나머지 ${more}행은 새 작업으로 추가`,
+                    hint: `${where} 맨 아래에 새 작업 ${more}개가 만들어집니다.`,
+                  },
+                  {
+                    value: 'fit',
+                    label: `있는 ${available}행에만 붙여넣기`,
+                    hint: `나머지 ${more}행은 붙여넣지 않습니다.`,
+                  },
+                ],
+                cancelLabel: '붙여넣기 취소',
+              });
+              if (pick === null) return;
+              fill = available;
+              if (pick === 'extend') extra = more;
             }
-            if (updates.length > 0) batchUpdateTasksRef.current(updates);
+
+            const updates: { id: string; patch: Partial<Task> }[] = [];
+            for (let dr = 0; dr < fill; dr++) {
+              const merged = rowPatch(grid[dr] ?? []);
+              if (Object.keys(merged).length > 0) updates.push({ id: curRows[startR + dr]!.task.id, patch: merged });
+            }
+            const store = useProjectStore.getState();
+            // One undo step for the whole paste, including any added rows.
+            store.transact(() => {
+              if (updates.length > 0) store.batchUpdateTasks(updates);
+              if (extra > 0) {
+                const ids = store.appendBlankTasks(startRow.task.parentId, extra);
+                const added = ids
+                  .map((id, i) => ({ id, patch: rowPatch(grid[fill + i] ?? []) }))
+                  .filter((u) => Object.keys(u.patch).length > 0);
+                if (added.length > 0) store.batchUpdateTasks(added);
+                store.setSelectedTaskIds(new Set(ids));
+              }
+            });
             return;
           }
 
           // No cell selected → legacy row import / update
           const curSel   = selectedRef.current;
           const selIds   = curRows.filter((r) => curSel.has(r.task.id)).map((r) => r.task.id);
-          if (selIds.length > 0) updateTasksFromTsvRef.current(selIds, trimmed);
-          else importTsvTasksRef.current(trimmed);
+          if (selIds.length === 0) {
+            importTsvTasksRef.current(trimmed);
+            return;
+          }
+          const lines = parseTsvDataRows(trimmed);
+          if (lines.length <= selIds.length) {
+            updateTasksFromTsvRef.current(selIds, trimmed);
+            return;
+          }
+          const more = lines.length - selIds.length;
+          const pick = await askChoice({
+            title: '붙여넣을 행이 더 많습니다',
+            message: `복사한 내용은 ${lines.length}행인데, 선택한 작업은 ${selIds.length}개입니다.`,
+            options: [
+              {
+                value: 'extend',
+                primary: true,
+                label: `${selIds.length}개를 바꾸고, 나머지 ${more}행은 새 작업으로 추가`,
+                hint: '선택한 마지막 작업 바로 아래에 새 작업이 만들어집니다.',
+              },
+              {
+                value: 'fit',
+                label: `선택한 ${selIds.length}개만 바꾸기`,
+                hint: `나머지 ${more}행은 붙여넣지 않습니다.`,
+              },
+            ],
+            cancelLabel: '붙여넣기 취소',
+          });
+          if (pick === null) return;
+          const store = useProjectStore.getState();
+          store.transact(() => {
+            store.updateTasksFromTsv(selIds, trimmed);
+            if (pick === 'extend') {
+              // A header line keeps the TSV parser from mistaking the first
+              // remaining row for a header.
+              const rest = ['작업명\t시작', ...lines.slice(selIds.length).map((r) => r.join('\t'))].join('\n');
+              store.insertTsvTasks(selIds[selIds.length - 1]!, rest);
+            }
+          });
         });
       }
     };
@@ -624,7 +714,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         <button
           onClick={toggleGridCollapse}
           className="flex h-7 w-full items-center justify-center text-content-muted transition-colors hover:bg-surface-2 hover:text-content"
-          title="작업 영역 펼치기"
+          {...tipProps('작업 표 펼치기', '접어 둔 왼쪽 작업 표를 다시 보이게 합니다.')}
         >
           <PanelLeftOpen size={14} />
         </button>
@@ -651,7 +741,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           onClick={expandAll}
           disabled={!hasParents}
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-content-muted transition-colors hover:bg-surface-2 hover:text-content disabled:opacity-30"
-          title="전체 펼치기"
+          {...tipProps('모든 그룹 펼치기', '접혀 있는 그룹을 모두 펼쳐 하위 작업까지 보이게 합니다.')}
           aria-label="전체 펼치기"
         >
           <ChevronsDown size={13} />
@@ -660,7 +750,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           onClick={collapseAll}
           disabled={!hasParents}
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-content-muted transition-colors hover:bg-surface-2 hover:text-content disabled:opacity-30"
-          title="전체 접기"
+          {...tipProps('모든 그룹 접기', '그룹 제목만 보이도록 모두 접습니다.')}
           aria-label="전체 접기"
         >
           <ChevronsUp size={13} />
@@ -668,7 +758,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
         <button
           onClick={toggleGridCollapse}
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-content-muted transition-colors hover:bg-surface-2 hover:text-content"
-          title="작업 영역 접기"
+          {...tipProps('작업 표 접기', '왼쪽 작업 표를 숨겨 차트를 넓게 봅니다.')}
           aria-label="작업 영역 접기"
         >
           <PanelLeftClose size={13} />
@@ -731,7 +821,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
             <ListPlus size={32} className="opacity-25" />
             <div className="flex flex-col items-center gap-1">
               <span className="text-xs font-medium text-content-muted">아직 작업이 없습니다</span>
-              <span className="text-2xs opacity-60">Enter 키 또는 아래 버튼으로 첫 번째 작업을 추가하세요</span>
+              <span className="text-2xs opacity-60">아래 버튼으로 첫 작업을 만들거나, 엑셀 표를 복사해 Ctrl+V로 한꺼번에 붙여넣으세요</span>
             </div>
             <button
               onClick={() => addTask()}
@@ -1026,9 +1116,9 @@ function ContextMenu({
       {/* 5a. 그룹화 */}
       {targetIds.length >= 2 && (
         <>
-          {section('그룹')}
+          {section('그룹 (상위·하위 작업)')}
           {item(
-            `선택 항목 그룹화 (${targetIds.length}개)`,
+            `새 그룹으로 묶기 (${targetIds.length}개)`,
             () => { onGroupSelected(targetIds); onClose(); },
           )}
           {divider()}
@@ -1040,14 +1130,14 @@ function ContextMenu({
       {hasCancelled && item(
         <span className="flex items-center gap-1.5">
           <RotateCcw size={12} className="text-green-500" />
-          {cancelledIds.length > 1 ? `취소 해제 — 복구 (${cancelledIds.length}개)` : '취소 해제 — 복구'}
+          {cancelledIds.length > 1 ? `취소 해제 (${cancelledIds.length}개)` : '취소 해제'}
         </span>,
         () => { onUncancel(cancelledIds); onClose(); },
       )}
       {hasActive && item(
         <span className="flex items-center gap-1.5">
           <Ban size={12} className="text-red-400" />
-          {activeIds.length > 1 ? `취소 처리 (${activeIds.length}개)` : '취소 처리'}
+          {activeIds.length > 1 ? `작업 취소 (${activeIds.length}개)` : '작업 취소'}
         </span>,
         () => { onCancel(activeIds); onClose(); },
       )}
@@ -1245,7 +1335,7 @@ const GridRow = memo(function GridRow({
                   onEditNavigate={onEditNavigate}
                 />
                 {task.manuallyScheduled && (
-                  <span title="수동 고정 — 의존성 무시됨. 작업 상세에서 해제 가능">
+                  <span {...tipProps('날짜 고정됨', '연결된 작업과 상관없이 이 날짜에 고정되어 있습니다. 막대를 더블클릭해 상세 창에서 풀 수 있습니다.')}>
                     <Lock size={9} className="ml-1 shrink-0 text-content-muted/50" />
                   </span>
                 )}
@@ -1344,7 +1434,7 @@ function PriorityCell({ task }: { task: Task }) {
     <span
       className={cn('cursor-pointer rounded px-1.5 py-0.5 text-2xs', priorityClass(task.priority))}
       onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); }}
-      title="더블클릭하여 우선순위 변경"
+      {...tipProps('우선순위', '더블클릭하면 우선순위를 바꿀 수 있습니다.')}
     >
       {PRIORITY_LABELS[task.priority]}
     </span>

@@ -27,6 +27,7 @@ type MenuAction =
   | 'menu:share-export'
   | 'menu:share-import'
   | 'menu:show-shortcuts'
+  | 'menu:show-help'
   | 'menu:close-requested';
 
 const bridge = {
@@ -48,6 +49,7 @@ const bridge = {
         'menu:share-export',
         'menu:share-import',
         'menu:show-shortcuts',
+        'menu:show-help',
         'menu:close-requested',
       ];
       const listeners = actions.map((ch) => {

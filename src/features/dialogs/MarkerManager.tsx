@@ -44,7 +44,10 @@ export function MarkerManager({ open, onClose }: { open: boolean; onClose: () =>
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="차트 마커 관리" width={540}>
+    <Modal open={open} onClose={onClose} title="날짜 표시선" width={540}>
+      <p className="mb-3 rounded-md bg-surface px-3 py-2 text-2xs leading-relaxed text-content-muted">
+        마감일, 회의일, 출시일처럼 기억해야 할 날짜에 이름 붙인 세로선을 차트에 그어 둡니다. 일정 계산에는 영향을 주지 않습니다.
+      </p>
       {/* Input row */}
       <div className="mb-3 flex items-end gap-2">
         <label className="flex flex-col text-2xs text-content-muted">

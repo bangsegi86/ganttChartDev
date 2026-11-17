@@ -16,7 +16,10 @@ export function CalendarSettings({ open, onClose }: { open: boolean; onClose: ()
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="달력 설정" width={480}>
+    <Modal open={open} onClose={onClose} title="근무일 설정" width={480}>
+      <p className="mb-3 rounded-md bg-surface px-3 py-2 text-2xs leading-relaxed text-content-muted">
+        작업 기간을 셀 때 어떤 날을 일하는 날로 볼지 정합니다. 여기서 바꾸면 모든 작업의 종료일이 다시 계산됩니다.
+      </p>
       <div className="space-y-4 text-sm text-content">
         <div>
           <p className="mb-2 text-2xs font-semibold text-content-muted">작업 요일</p>

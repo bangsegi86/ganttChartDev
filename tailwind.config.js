@@ -21,6 +21,11 @@ export default {
       fontSize: {
         '2xs': '0.6875rem',
       },
+      screens: {
+        // Toolbar shows full text labels from this width; below it, buttons
+        // whose icon is self-explanatory collapse to icon + tooltip.
+        wide: '1560px',
+      },
     },
   },
   plugins: [],

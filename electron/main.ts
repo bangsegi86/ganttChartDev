@@ -259,6 +259,7 @@ function buildKoreanMenu(): void {
     {
       label: '도움말',
       submenu: [
+        { label: '사용 설명서', accelerator: 'F1', click: () => send('menu:show-help') },
         {
           label: '키보드 단축키',
           accelerator: 'CmdOrCtrl+/',

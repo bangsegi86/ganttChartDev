@@ -1,5 +1,6 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import { cn } from './cn';
+import { tipProps } from './Tooltip';
 
 type Variant = 'default' | 'ghost' | 'accent' | 'danger';
 type Size = 'sm' | 'md' | 'icon';
@@ -8,6 +9,12 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
   active?: boolean;
+  /** Tooltip title (shown by the app tooltip layer, see `TooltipLayer`). */
+  tip?: string;
+  /** One- or two-sentence explanation shown under the tooltip title. */
+  tipDesc?: string;
+  /** Keyboard shortcut shown in the tooltip. */
+  tipKeys?: string;
 }
 
 const variants: Record<Variant, string> = {
@@ -26,9 +33,10 @@ const sizes: Record<Size, string> = {
 
 /** Reusable, theme-aware button used across the toolbar and dialogs. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'default', size = 'md', active, className, ...props }, ref) => (
+  ({ variant = 'default', size = 'md', active, className, tip, tipDesc, tipKeys, ...props }, ref) => (
     <button
       ref={ref}
+      {...(tip ? tipProps(tip, tipDesc, tipKeys) : {})}
       aria-pressed={active !== undefined ? active : undefined}
       className={cn(
         'inline-flex items-center rounded-md font-medium transition-all select-none whitespace-nowrap',

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { tipProps } from '@/shared/ui/Tooltip';
 import { createPortal } from 'react-dom';
 import { AlignJustify, Minus, Plus } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
@@ -835,7 +836,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => scaleDayWidth(1 / 1.2)}
             className="text-content-muted hover:text-content"
-            title="축소"
+            {...tipProps('가로 좁히기', '날짜 칸 폭을 줄여 더 긴 기간을 봅니다.')}
           >
             <Minus size={12} />
           </button>
@@ -848,13 +849,13 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
             onMouseDown={(e) => e.stopPropagation()}
             onChange={(e) => setDayWidthScale(Number(e.target.value))}
             className="w-36 accent-[rgb(var(--color-accent))]"
-            title="가로 비율 조정"
+            {...tipProps('날짜 칸 폭', '끌어서 날짜 칸의 가로 폭을 조절합니다. Ctrl+마우스 휠로도 됩니다.')}
           />
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => scaleDayWidth(1.2)}
             className="text-content-muted hover:text-content"
-            title="확대"
+            {...tipProps('가로 넓히기', '날짜 칸 폭을 늘려 자세히 봅니다.')}
           >
             <Plus size={12} />
           </button>
@@ -870,7 +871,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => setRowHeight(rowHeight - 4)}
             className="text-content-muted hover:text-content"
-            title="행 간격 줄이기"
+            {...tipProps('행 높이 줄이기', '한 화면에 더 많은 작업을 봅니다.')}
           >
             <Minus size={12} />
           </button>
@@ -883,13 +884,13 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
             onMouseDown={(e) => e.stopPropagation()}
             onChange={(e) => setRowHeight(Number(e.target.value))}
             className="w-36 accent-[rgb(var(--color-accent))]"
-            title="행 높이 조정"
+            {...tipProps('행 높이', '끌어서 표와 차트의 행 높이를 조절합니다.')}
           />
           <button
             onMouseDown={(e) => e.stopPropagation()}
             onClick={() => setRowHeight(rowHeight + 4)}
             className="text-content-muted hover:text-content"
-            title="행 간격 늘리기"
+            {...tipProps('행 높이 늘리기', '행 사이를 넓혀 보기 편하게 합니다.')}
           >
             <Plus size={12} />
           </button>

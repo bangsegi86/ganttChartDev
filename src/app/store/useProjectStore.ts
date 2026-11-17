@@ -153,6 +153,13 @@ interface ProjectStore {
   insertTsvTasks: (afterId: TaskId | null, text: string) => number;
   /** Update existing tasks in-place from clipboard TSV (paste onto selection). */
   updateTasksFromTsv: (taskIds: string[], tsvText: string) => void;
+  /** Run several edits as ONE undo step (e.g. paste that updates and adds rows). */
+  transact: (fn: () => void) => void;
+  /**
+   * Add `count` blank tasks under `parentId`, right after `afterId` (a child of
+   * that parent) or at the end of its children. Returns the new ids in order.
+   */
+  appendBlankTasks: (parentId: TaskId | null, count: number, afterId?: TaskId | null) => TaskId[];
   /** Apply multiple patches in a single commit (one undo step). Used for range paste. */
   batchUpdateTasks: (updates: { id: TaskId; patch: Partial<Task> }[]) => void;
 
@@ -235,6 +242,9 @@ interface ProjectStore {
 }
 
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+/** Nesting depth of `transact()` and whether it already recorded an undo step. */
+let txDepth = 0;
+let txRecorded = false;
 
 /** Build the initial empty document so the store always has a valid project. */
 function emptyProject(): Project {
@@ -271,7 +281,7 @@ const TSV_PRIORITY_MAP: Record<string, 'low' | 'medium' | 'high' | 'critical'> =
  * row if one is detected. Header detection: the second cell of the first row
  * is NOT an ISO date (e.g. "시작" header vs "2026-01-06" data).
  */
-function parseTsvDataRows(text: string): string[][] {
+export function parseTsvDataRows(text: string): string[][] {
   const rows = text
     .replace(/\r/g, '')
     .split('\n')
@@ -338,17 +348,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     const project = shareProject(prev, solved.project);
     if (project === prev) return;
     const derived: DerivedSchedule = { ...solved, project };
-    const past = [...state.past, prev].slice(-HISTORY_LIMIT);
+    // Inside `transact()` only the first edit records an undo step, so the
+    // whole group of edits is undone together.
+    const record = !(txDepth > 0 && txRecorded);
+    if (txDepth > 0) txRecorded = true;
+    const past = record ? [...state.past, prev].slice(-HISTORY_LIMIT) : state.past;
     set({ derived, project: derived.project, past, future: [], dirty: true });
     scheduleAutosave();
   }
 
-  /**
-   * Throttled autosave: the first unsaved edit arms a timer and later edits do
-   * not reset it, so continuous editing is still snapshotted at least once per
-   * interval. (A debounce here meant nothing was saved while the user kept
-   * editing more often than once a minute.)
-   */
   /**
    * Change only tasks' `collapsed` flags. Collapse state is a view concern: it
    * never affects the schedule, so it skips recalc, the undo history and the
@@ -390,6 +398,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     set({ derived: { ...state.derived, project }, project });
   }
 
+  /**
+   * Throttled autosave: the first unsaved edit arms a timer and later edits do
+   * not reset it, so continuous editing is still snapshotted at least once per
+   * interval. (A debounce here meant nothing was saved while the user kept
+   * editing more often than once a minute.)
+   */
   function scheduleAutosave(): void {
     if (autosaveTimer) return;
     autosaveTimer = setTimeout(() => {
@@ -558,6 +572,37 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           get().showAppToast(`선행 작업 때문에 시작일이 ${got.start}(으)로 조정되었습니다.`, 'error');
         }
       }
+    },
+
+    transact(fn) {
+      txDepth++;
+      if (txDepth === 1) txRecorded = false;
+      try {
+        fn();
+      } finally {
+        txDepth--;
+      }
+    },
+
+    appendBlankTasks(parentId, count, afterId = null) {
+      if (count <= 0) return [];
+      const ids = Array.from({ length: count }, () => nanoid(10));
+      commit((d) => {
+        const siblings = d.tasks.filter((t) => t.parentId === parentId);
+        const after = afterId ? siblings.find((t) => t.id === afterId) : undefined;
+        const lastOrder = siblings.reduce((m, t) => Math.max(m, t.order), -1);
+        const insertAt = after ? after.order + 1 : lastOrder + 1;
+        for (const t of siblings) if (t.order >= insertAt) t.order += count;
+        ids.forEach((id, i) => {
+          d.tasks.push({
+            id, parentId, name: '새 작업', start: d.startDate, end: d.startDate,
+            durationDays: 1, progress: 0, priority: 'medium', assigneeIds: [], notes: '',
+            isMilestone: false, collapsed: false, constraint: 'asap', constraintDate: null,
+            manuallyScheduled: false, order: insertAt + i, color: null, cancelled: false,
+          });
+        });
+      });
+      return ids;
     },
 
     addTaskBefore(beforeId) {

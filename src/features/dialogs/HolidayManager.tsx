@@ -32,7 +32,10 @@ export function HolidayManager({ open, onClose }: { open: boolean; onClose: () =
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="공휴일 관리" width={560}>
+    <Modal open={open} onClose={onClose} title="공휴일" width={560}>
+      <p className="mb-3 rounded-md bg-surface px-3 py-2 text-2xs leading-relaxed text-content-muted">
+        여기 등록한 날은 쉬는 날로 보고 작업 기간에서 뺍니다. (근무일 설정에서 &lsquo;공휴일 제외&rsquo;가 켜져 있을 때)
+      </p>
       <div className="mb-3 flex items-end gap-2">
         <label className="flex flex-col text-2xs text-content-muted">
           날짜

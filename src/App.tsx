@@ -23,6 +23,10 @@ import { autosaveRepository } from '@/services/persistence/projectRepository';
 import { useScrollSync } from '@/app/store/useScrollSync';
 import { Button } from '@/shared/ui/Button';
 import { bridge } from '@/shared/bridge';
+import { HelpDialog, type HelpSection } from '@/features/help/HelpDialog';
+import { ChoiceDialogHost } from '@/shared/ui/ChoiceDialog';
+import { TooltipLayer } from '@/shared/ui/Tooltip';
+import { newProjectSafely, openProjectSafely } from '@/app/guardUnsaved';
 
 type DialogKind = 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | 'markers' | null;
 
@@ -41,7 +45,17 @@ export default function App() {
   const loadProject = useProjectStore((s) => s.loadProject);
 
   const [dialog, setDialog] = useState<DialogKind>(null);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [help, setHelp] = useState<{ open: boolean; section: HelpSection }>({ open: false, section: 'start' });
+  const openHelp = (section: HelpSection = 'start') => setHelp({ open: true, section });
+
+  // F1 opens the guide from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'F1') { e.preventDefault(); setHelp({ open: true, section: 'start' }); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const [recovery, setRecovery] = useState<null | (() => void)>(null);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
 
@@ -83,9 +97,9 @@ export default function App() {
         const { project, schedules } = state.derived;
         const name = project.name || '간트';
         if (action === 'menu:new-project') {
-          state.newProject();
+          await newProjectSafely();
         } else if (action === 'menu:open-file') {
-          await state.shareImport();
+          await openProjectSafely();
         } else if (action === 'menu:save') {
           void state.saveProject();
         } else if (action === 'menu:save-as') {
@@ -121,9 +135,11 @@ export default function App() {
         } else if (action === 'menu:share-export') {
           await state.shareExport();
         } else if (action === 'menu:share-import') {
-          await state.shareImport();
+          await openProjectSafely();
         } else if (action === 'menu:show-shortcuts') {
-          setShortcutsOpen(true);
+          openHelp('keys');
+        } else if (action === 'menu:show-help') {
+          openHelp('start');
         } else if (action === 'menu:close-requested') {
           if (useProjectStore.getState().dirty) {
             setCloseConfirmOpen(true);
@@ -158,6 +174,7 @@ export default function App() {
         onOpenBaselines={() => setDialog('baselines')}
         onOpenViewGroups={() => setDialog('viewGroups')}
         onOpenMarkers={() => setDialog('markers')}
+        onOpenHelp={() => openHelp()}
       />
 
       {recovery && (
@@ -224,24 +241,9 @@ export default function App() {
         </div>
       )}
 
-      {/* Keyboard shortcuts reference dialog */}
-      {shortcutsOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onMouseDown={() => setShortcutsOpen(false)}
-        >
-          <div
-            className="w-[480px] max-h-[80vh] overflow-auto rounded-xl border border-border bg-surface-2 p-6 shadow-2xl"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <h2 className="mb-4 text-sm font-semibold text-content">키보드 단축키</h2>
-            <ShortcutsTable />
-            <div className="mt-4 flex justify-end">
-              <Button size="sm" onClick={() => setShortcutsOpen(false)}>닫기</Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <HelpDialog open={help.open} initialSection={help.section} onClose={() => setHelp((h) => ({ ...h, open: false }))} />
+      <ChoiceDialogHost />
+      <TooltipLayer />
 
       {/* App-level toast notification */}
       {appToast && (
@@ -254,59 +256,6 @@ export default function App() {
         >
           {appToast.msg}
         </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Keyboard shortcuts reference table
-// ---------------------------------------------------------------------------
-
-const SHORTCUTS = [
-  { section: '일반' },
-  { key: 'Ctrl+S', desc: '저장' },
-  { key: 'Ctrl+Z', desc: '실행 취소' },
-  { key: 'Ctrl+Y / Ctrl+Shift+Z', desc: '다시 실행' },
-  { key: 'Ctrl+N', desc: '새 프로젝트' },
-  { key: 'Ctrl+O', desc: '파일 열기' },
-  { section: '편집' },
-  { key: 'Enter / F2', desc: '셀 편집' },
-  { key: 'Delete', desc: '선택 항목 삭제 (취소 처리)' },
-  { key: 'Ctrl+D', desc: '복제' },
-  { key: 'Ctrl+X', desc: '잘라내기 (이동 준비)' },
-  { key: 'Tab', desc: '들여쓰기 (하위 작업으로)' },
-  { key: 'Shift+Tab', desc: '내어쓰기 (상위로 이동)' },
-  { key: 'Alt+↑/↓', desc: '행 위/아래 이동' },
-  { section: '보기' },
-  { key: 'Ctrl+=', desc: '차트 확대' },
-  { key: 'Ctrl+-', desc: '차트 축소' },
-  { key: 'Ctrl+0', desc: '차트 비율 초기화' },
-  { key: 'Ctrl+Wheel', desc: '마우스 위치 기준 확대/축소' },
-  { section: '차트' },
-  { key: '드래그', desc: '바 이동 (날짜 변경)' },
-  { key: '바 끝 드래그', desc: '기간 조정' },
-  { key: 'Alt+드래그', desc: '의존성 연결' },
-  { key: '더블클릭', desc: '작업 상세 검사' },
-  { key: 'Space+드래그', desc: '패닝 (pan)' },
-];
-
-function ShortcutsTable() {
-  return (
-    <div className="text-xs text-content">
-      {SHORTCUTS.map((row, i) =>
-        'section' in row ? (
-          <div key={i} className="mt-3 mb-1 text-2xs font-semibold uppercase tracking-wider text-content-muted first:mt-0">
-            {row.section}
-          </div>
-        ) : (
-          <div key={i} className="flex items-center gap-3 py-0.5">
-            <kbd className="min-w-[120px] rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-2xs text-content-muted">
-              {row.key}
-            </kbd>
-            <span>{row.desc}</span>
-          </div>
-        ),
       )}
     </div>
   );

@@ -27,6 +27,9 @@ export function ResourceManager({ open, onClose }: { open: boolean; onClose: () 
 
   return (
     <Modal open={open} onClose={onClose} title="담당자 관리" width={560}>
+      <p className="mb-3 rounded-md bg-surface px-3 py-2 text-2xs leading-relaxed text-content-muted">
+        작업을 맡을 사람을 등록합니다. 하루 근무시간을 넣어 두면 &lsquo;업무량&rsquo; 화면에서 일이 몰린 날을 빨갛게 보여 줍니다.
+      </p>
       <div className="mb-3 space-y-2">
         {/* Row 1: text fields */}
         <div className="flex gap-2">

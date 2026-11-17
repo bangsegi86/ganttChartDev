@@ -297,3 +297,34 @@ describe('group (summary) drag moves every child', () => {
     expect(dates().c3).toEqual(['2025-12-29', '2025-12-30']);
   });
 });
+
+describe('paste helpers: transact + appendBlankTasks', () => {
+  it('appends rows at the end of a group and undoes the whole paste at once', async () => {
+    const { useProjectStore } = await import('@/app/store/useProjectStore');
+    const p = createDemoProject();
+    p.tasks = [
+      task('G', null, '2026-01-05', '2026-01-05', 0),
+      task('a', 'G', '2026-01-05', '2026-01-05', 0),
+      task('b', 'G', '2026-01-05', '2026-01-05', 1),
+      task('H', null, '2026-01-05', '2026-01-05', 1),
+    ];
+    p.dependencies = [];
+    useProjectStore.getState().loadProject(p);
+    const s = useProjectStore.getState();
+    let ids: string[] = [];
+    s.transact(() => {
+      s.batchUpdateTasks([{ id: 'b', patch: { name: 'B2' } }]);
+      ids = s.appendBlankTasks('G', 2);
+      s.batchUpdateTasks(ids.map((id, i) => ({ id, patch: { name: `new${i}` } })));
+    });
+    const kids = useProjectStore.getState().derived.project.tasks
+      .filter((t) => t.parentId === 'G').sort((x, y) => x.order - y.order).map((t) => t.name);
+    expect(kids).toEqual(['a', 'B2', 'new0', 'new1']);
+    expect(useProjectStore.getState().past).toHaveLength(1);
+
+    useProjectStore.getState().undo();
+    const after = useProjectStore.getState().derived.project.tasks;
+    expect(after).toHaveLength(4);
+    expect(after.find((t) => t.id === 'b')!.name).toBe('b');
+  });
+});
