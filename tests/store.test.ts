@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useProjectStore } from '@/app/store/useProjectStore';
-import { createDemoProject } from '@/data/sampleData';
+import { createDemoProject } from './fixtures/sampleData';
 
 // The store persists via the bridge; stub it so tests don't touch storage.
 vi.mock('@/shared/bridge', () => ({

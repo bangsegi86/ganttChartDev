@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Task } from '@/entities';
-import { createDemoProject } from '@/data/sampleData';
+import { createDemoProject } from './fixtures/sampleData';
 import { scheduleProject } from '@/services/scheduler/scheduleEngine';
 import { topologicalOrder } from '@/services/dependency/graph';
 import { buildVisibleRows, filterRowsByName } from '@/features/grid/treeModel';

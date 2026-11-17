@@ -39,9 +39,6 @@ import { createPortal } from 'react-dom';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { Button } from '@/shared/ui/Button';
 import { ZOOM_ORDER, type ZoomLevel } from '@/features/gantt/zoom';
-import { exportExcel } from '@/services/export/exportExcel';
-import { exportPdf, exportPng, warnIfTruncated } from '@/services/export/exportImage';
-import { exportHtml } from '@/services/export/exportHtml';
 
 const ZOOM_LABELS: Record<ZoomLevel, string> = {
   hour: '시간',
@@ -141,10 +138,17 @@ export function Toolbar({
       showCritical: state.view.showCriticalPath,
       showBaseline: state.view.showBaseline,
     };
-    if (kind === 'excel') await exportExcel(project, name, baseInput);
-    else if (kind === 'html') await exportHtml(baseInput, name);
-    else if (kind === 'png') warnIfTruncated(await exportPng(baseInput, name));
-    else warnIfTruncated(await exportPdf(baseInput, name));
+    // Export modules (and ExcelJS/jsPDF) are loaded on demand to keep startup light.
+    if (kind === 'excel') {
+      const { exportExcel } = await import('@/services/export/exportExcel');
+      await exportExcel(project, name, baseInput);
+    } else if (kind === 'html') {
+      const { exportHtml } = await import('@/services/export/exportHtml');
+      await exportHtml(baseInput, name);
+    } else {
+      const { exportPng, exportPdf, warnIfTruncated } = await import('@/services/export/exportImage');
+      warnIfTruncated(await (kind === 'png' ? exportPng : exportPdf)(baseInput, name));
+    }
   };
 
   const rowCls = 'flex items-center gap-1 border-b border-border bg-surface-2 px-2 py-1 overflow-x-auto scrollbar-none';

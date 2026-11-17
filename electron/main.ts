@@ -14,13 +14,6 @@ let mainWindow: BrowserWindow | null = null;
 /** Set to true once the renderer has confirmed it is safe to close the window. */
 let allowClose = false;
 
-// Persistence lives in the user-data directory so it survives app updates and
-// is writable on all platforms. We use a documents-style JSON store; the same
-// IPC contract can be backed by SQLite without touching the renderer.
-function dataDir(): string {
-  return path.join(app.getPath('userData'), 'projects');
-}
-
 function autosaveDir(): string {
   return path.join(app.getPath('userData'), 'autosave');
 }
@@ -74,41 +67,6 @@ function createWindow(): void {
     void mainWindow.loadFile(path.join(RENDERER_DIST, 'index.html'));
   }
 }
-
-// --- IPC: project persistence -------------------------------------------------
-
-ipcMain.handle('persistence:save', async (_e, id: string, json: string) => {
-  await ensureDir(dataDir());
-  const file = path.join(dataDir(), `${sanitize(id)}.json`);
-  await fs.writeFile(file, json, 'utf-8');
-  return { ok: true, path: file };
-});
-
-ipcMain.handle('persistence:load', async (_e, id: string) => {
-  const file = path.join(dataDir(), `${sanitize(id)}.json`);
-  try {
-    const json = await fs.readFile(file, 'utf-8');
-    return { ok: true, json };
-  } catch {
-    return { ok: false, json: null };
-  }
-});
-
-ipcMain.handle('persistence:list', async () => {
-  await ensureDir(dataDir());
-  const entries = await fs.readdir(dataDir());
-  return entries.filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''));
-});
-
-ipcMain.handle('persistence:delete', async (_e, id: string) => {
-  const file = path.join(dataDir(), `${sanitize(id)}.json`);
-  try {
-    await fs.unlink(file);
-    return { ok: true };
-  } catch {
-    return { ok: false };
-  }
-});
 
 // --- IPC: autosave / crash recovery ------------------------------------------
 
@@ -214,10 +172,6 @@ ipcMain.handle('project:save-to-path', async (_e, filePath: string, json: string
   }
 });
 
-function sanitize(id: string): string {
-  return id.replace(/[^a-zA-Z0-9_-]/g, '_');
-}
-
 function send(channel: string) {
   mainWindow?.webContents.send(channel);
 }
@@ -240,8 +194,8 @@ function buildKoreanMenu(): void {
     { label: '저장', accelerator: 'CmdOrCtrl+S', click: () => send('menu:save') },
     { label: '다른 이름으로 저장…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('menu:save-as') },
     { type: 'separator' },
-    { label: '파일로 내보내기 (.smgantt)…', accelerator: 'CmdOrCtrl+Shift+E', click: () => send('menu:share-export') },
-    { label: '파일 가져오기 (.smgantt)…', accelerator: 'CmdOrCtrl+Shift+I', click: () => send('menu:share-import') },
+    // Writes a copy without changing the file the window is editing.
+    { label: '사본 저장 (.smgantt)…', accelerator: 'CmdOrCtrl+Shift+E', click: () => send('menu:share-export') },
     { type: 'separator' },
     {
       label: '이미지/문서로 내보내기',
