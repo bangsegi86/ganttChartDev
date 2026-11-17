@@ -152,7 +152,6 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const updateTasksFromTsv = useProjectStore((s) => s.updateTasksFromTsv);
   const batchUpdateTasks   = useProjectStore((s) => s.batchUpdateTasks);
   const moveTaskBefore     = useProjectStore((s) => s.moveTaskBefore);
-  const moveTasks          = useProjectStore((s) => s.moveTasks);
   const addTask            = useProjectStore((s) => s.addTask);
   const addTaskBefore      = useProjectStore((s) => s.addTaskBefore);
   const sortChildrenByStart = useProjectStore((s) => s.sortChildrenByStart);
@@ -176,6 +175,64 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const [groupSubmenuOpen, setGroupSubmenuOpen] = useState(false);
   /** Tasks marked for a cut/move (right-click 잘라내기). Empty = nothing cut. */
   const [cutTaskIds, setCutTaskIds] = useState<Set<string>>(new Set());
+  const cutRef = useRef(cutTaskIds);
+  cutRef.current = cutTaskIds;
+
+  /** Mark rows as cut (moved on the next paste) and say what to do next. */
+  const startCut = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setCutTaskIds(new Set(ids));
+    useProjectStore.getState().showAppToast(
+      `작업 ${ids.length}개를 잘라냈습니다. 옮길 위치의 행을 클릭하고 Ctrl+V를 누르면 그 행 바로 아래로 옮겨집니다. ` +
+      '어떤 작업 안으로 넣으려면 그 작업을 오른쪽 클릭 → \'잘라낸 작업을 이 작업 안으로 옮기기\'. 취소는 Esc.',
+      'info',
+    );
+  }, []);
+
+  /**
+   * Move the cut rows next to `targetId` (same level, right below it) or into
+   * it as the last children. Asks first when that would turn a linked task into
+   * a group, and explains refusals.
+   */
+  const moveCutTo = useCallback(async (targetId: string, asChild: boolean) => {
+    const ids = [...cutRef.current];
+    if (ids.length === 0) return;
+    const store = useProjectStore.getState();
+    const proj = store.derived.project;
+    const target = proj.tasks.find((t) => t.id === targetId);
+    if (!target) return;
+    if (asChild && !proj.tasks.some((t) => t.parentId === targetId)) {
+      const links = proj.dependencies.filter((d) => d.fromId === targetId || d.toId === targetId).length;
+      const pick = await askChoice({
+        title: `'${target.name}'을(를) 그룹으로 만들까요?`,
+        message:
+          `'${target.name}'은(는) 지금 하위 작업이 없는 일반 작업입니다. 이 안으로 옮기면 그룹이 되어, ` +
+          '기간과 진척률이 하위 작업에서 자동 계산되고, 직접 입력한 날짜·진척률은 더 이상 쓰이지 않습니다.' +
+          (links > 0 ? `\n또한 '${target.name}'에 걸려 있던 연결 ${links}개는 일정에 영향을 주지 않게 됩니다.` : ''),
+        options: [
+          { value: 'child', label: `'${target.name}' 안에 넣어 그룹으로 만들기` },
+          { value: 'sibling', primary: true, label: `'${target.name}' 바로 아래(같은 단계)로 옮기기`, hint: '그룹을 만들지 않습니다.' },
+        ],
+        cancelLabel: '옮기기 취소',
+      });
+      if (pick === null) return;
+      asChild = pick === 'child';
+    }
+    const err = store.moveTasks(ids, asChild ? targetId : target.parentId, asChild ? null : targetId);
+    if (err) {
+      store.showAppToast(err, 'error');
+      return;
+    }
+    setCutTaskIds(new Set());
+    store.showAppToast(
+      asChild
+        ? `작업 ${ids.length}개를 '${target.name}' 그룹 맨 아래로 옮겼습니다. (되돌리기: Ctrl+Z)`
+        : `작업 ${ids.length}개를 '${target.name}' 바로 아래로 옮겼습니다. (되돌리기: Ctrl+Z)`,
+      'success',
+    );
+  }, []);
+  const moveCutToRef = useRef(moveCutTo);
+  const startCutRef = useRef(startCut);
   /** Active cell (moving end of the selection range). */
   const [selectedCell, setSelectedCell] = useState<CellPos | null>(null);
   /** Fixed anchor of the range (Shift+click/Shift+Arrow keeps this while moving active cell). */
@@ -401,7 +458,10 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
 
         // Escape: clear selection range + cancel any pending cut
         if (e.key === 'Escape') {
-          setCutTaskIds((prev) => (prev.size ? new Set() : prev));
+          if (cutRef.current.size > 0) {
+            setCutTaskIds(new Set());
+            useProjectStore.getState().showAppToast('잘라내기를 취소했습니다.', 'info');
+          }
           if (cell) {
             e.preventDefault();
             setSelectedCell(null);
@@ -492,6 +552,23 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
 
       const key = e.key.toLowerCase();
 
+      // Ctrl/Cmd+X: cut rows to move them elsewhere (the selection, or the
+      // active cell's row).
+      if (key === 'x') {
+        e.preventDefault();
+        const curSel = selectedRef.current;
+        const rowsNow = rowsRef.current;
+        const ids = cell && !curSel.has(cell.taskId)
+          ? [cell.taskId]
+          : rowsNow.filter((r) => curSel.has(r.task.id)).map((r) => r.task.id);
+        if (ids.length === 0) {
+          useProjectStore.getState().showAppToast('잘라낼 작업을 먼저 선택하세요.', 'error');
+          return;
+        }
+        startCutRef.current(ids);
+        return;
+      }
+
       if (key === 'c') {
         e.preventDefault();
         const curRows  = rowsRef.current;
@@ -548,6 +625,20 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           }
           insertTsvTasksRef.current(afterId, text);
         });
+        return;
+      }
+
+      // Ctrl/Cmd+V with rows cut: move them right below the chosen row.
+      if (key === 'v' && !e.shiftKey && cutRef.current.size > 0) {
+        e.preventDefault();
+        const curSel = selectedRef.current;
+        const targetId = cell?.taskId
+          ?? rowsRef.current.filter((r) => curSel.has(r.task.id)).pop()?.task.id;
+        if (!targetId) {
+          useProjectStore.getState().showAppToast('옮길 위치의 행을 먼저 클릭한 뒤 Ctrl+V를 누르세요.', 'error');
+          return;
+        }
+        void moveCutToRef.current(targetId, false);
         return;
       }
 
@@ -917,18 +1008,9 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
           groupSubmenuOpen={groupSubmenuOpen}
           setGroupSubmenuOpen={setGroupSubmenuOpen}
           onClose={() => { setContextMenu(null); setGroupSubmenuOpen(false); }}
-          onCut={(ids) => setCutTaskIds(new Set(ids))}
-          onPasteAsChild={(targetId) => {
-            if (cutTaskIds.size === 0) return;
-            moveTasks([...cutTaskIds], targetId, null);
-            setCutTaskIds(new Set());
-          }}
-          onPasteAsSibling={(targetId) => {
-            if (cutTaskIds.size === 0) return;
-            const target = rowsRef.current.find((r) => r.task.id === targetId);
-            moveTasks([...cutTaskIds], target?.task.parentId ?? null, targetId);
-            setCutTaskIds(new Set());
-          }}
+          onCut={(ids) => startCut(ids)}
+          onPasteAsChild={(targetId) => { void moveCutTo(targetId, true); }}
+          onPasteAsSibling={(targetId) => { void moveCutTo(targetId, false); }}
           onAddBefore={(id) => addTaskBefore(id)}
           onAddAfter={(id) => addTask(id)}
           onToggleCollapse={(id) => toggleCollapse(id)}
@@ -1094,7 +1176,8 @@ function ContextMenu({
         targetIds.length > 1 ? `복제 (${targetIds.length}개)` : '복제',
         () => {
           if (targetIds.length > 1) {
-            for (const id of targetIds) onDuplicate(id);
+            // One call so nested picks are copied once, with their group.
+            useProjectStore.getState().duplicateTasks(targetIds);
           } else {
             onDuplicate(taskId);
           }
@@ -1105,24 +1188,24 @@ function ContextMenu({
       {divider()}
 
       {/* 3. 잘라내기 → 다른 위치로 이동(붙여넣기) */}
-      {section('행 이동')}
+      {section('다른 곳으로 옮기기')}
       {item(
-        targetIds.length > 1 ? `잘라내기 (${targetIds.length}개)` : '잘라내기',
+        targetIds.length > 1 ? `잘라내기 — ${targetIds.length}개 옮길 준비 (Ctrl+X)` : '잘라내기 — 옮길 준비 (Ctrl+X)',
         () => { onCut(targetIds); onClose(); },
       )}
       {cutCount > 0 && (
         <>
           {item(
             isTargetCut
-              ? '여기 하위로 붙여넣기 (대상 자신 불가)'
-              : `여기 하위로 붙여넣기${cutCount > 1 ? ` (${cutCount}개)` : ''}`,
+              ? '이 작업 안으로 옮기기 (잘라낸 작업 자신에는 불가)'
+              : `잘라낸 ${cutCount}개를 이 작업 안으로 옮기기`,
             () => { onPasteAsChild(taskId); onClose(); },
             isTargetCut,
           )}
           {item(
             isTargetCut
-              ? '이 행 다음으로 붙여넣기 (대상 자신 불가)'
-              : `이 행 다음으로 붙여넣기${cutCount > 1 ? ` (${cutCount}개)` : ''}`,
+              ? '이 행 아래로 옮기기 (잘라낸 작업 자신에는 불가)'
+              : `잘라낸 ${cutCount}개를 이 행 바로 아래로 옮기기 (Ctrl+V)`,
             () => { onPasteAsSibling(taskId); onClose(); },
             isTargetCut,
           )}
@@ -1138,16 +1221,16 @@ function ContextMenu({
       {divider()}
 
       {/* 4. 복사 */}
-      {section('클립보드')}
+      {section('복사 · 엑셀 표 붙여넣기')}
       {item(
-        copyIds.size > 1 ? `선택 행 복사 (${copyIds.size}개)` : '이 행 복사',
+        copyIds.size > 1 ? `선택한 ${copyIds.size}행 복사 (엑셀에 붙여넣기 가능)` : '이 행 복사 (엑셀에 붙여넣기 가능)',
         () => { onCopyRows(copyIds); onClose(); },
       )}
       {item(
-        '이 행 아래 붙여넣기 (행 삽입)',
+        '복사한 표를 이 행 아래에 새 작업으로 넣기 (Ctrl+Shift+V)',
         () => { onPasteAfter(taskId); onClose(); },
       )}
-      {item('맨 아래에 붙여넣기', () => { onPasteEnd(); onClose(); })}
+      {item('복사한 표를 맨 아래에 새 작업으로 넣기', () => { onPasteEnd(); onClose(); })}
 
       {divider()}
 

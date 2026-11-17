@@ -16,6 +16,7 @@ import type { FilterMode } from '@/features/view/viewFilter';
 import { recalc, type DerivedSchedule } from './recalc';
 import { shareProject } from './structuralShare';
 import { normalizeProject } from './normalizeProject';
+import { buildVisibleRows } from '@/features/grid/treeModel';
 import { formatDayKo, parseDateInput } from '@/shared/date/parseDateInput';
 import { WorkingCalendar } from '@/services/scheduler/workCalendar';
 import { wouldCreateCycle } from '@/services/dependency/graph';
@@ -67,10 +68,6 @@ interface ViewState {
   appToast: { msg: string; type: 'success' | 'error' | 'info'; id: number } | null;
 }
 
-interface ClipboardState {
-  tasks: Task[];
-}
-
 interface ProjectStore {
   // --- document + derived analysis ---
   derived: DerivedSchedule;
@@ -84,7 +81,6 @@ interface ProjectStore {
   /** Task whose full details are open in the inspector, if any. */
   inspectingTaskId: TaskId | null;
   linkSourceId: TaskId | null; // task currently being linked by drag
-  clipboard: ClipboardState | null;
   /** True when all selected tasks are already cancelled and awaiting hard-delete confirmation. */
   confirmDeletePending: boolean;
   // --- view ---
@@ -134,16 +130,20 @@ interface ProjectStore {
    * their ancestor). Moving a task into itself or its own descendant is a no-op.
    * This is what powers the right-click 잘라내기 → 붙여넣기 reparent flow.
    */
-  moveTasks: (taskIds: TaskId[], newParentId: TaskId | null, afterId: TaskId | null) => void;
+  moveTasks: (taskIds: TaskId[], newParentId: TaskId | null, afterId: TaskId | null) => string | null;
   duplicateSelected: () => void;
+  /**
+   * Duplicate tasks with their whole subtrees (and the links inside them).
+   * Nested picks ride along with their selected ancestor. Each copy is placed
+   * right below its original. Returns the new top-level ids.
+   */
+  duplicateTasks: (ids: TaskId[]) => TaskId[];
   /** Deep-clone a task and its entire subtree, inserting the copy right below the original. */
   duplicateTask: (id: TaskId) => void;
   /** Move a task and every descendant forward/back by the given number of days. */
   moveSubtreeBy: (id: TaskId, deltaDays: number) => void;
   /** Wrap the currently selected tasks in a newly created parent task. */
   groupSelectedTasks: () => void;
-  copySelected: () => void;
-  paste: () => void;
   /** Bulk-import tasks from clipboard TSV text (e.g. copied from Excel). */
   importTsvTasks: (text: string) => void;
   /**
@@ -345,6 +345,42 @@ function reportBadDates(bad: string[], show: (msg: string, type: 'error') => voi
   show(`날짜 ${bad.length}칸을 알아볼 수 없어 비워 두었습니다(새 작업은 프로젝트 시작일로 넣음).\n${bad.slice(0, 3).join('\n')}${more}`, 'error');
 }
 
+/**
+ * Of `ids`, keep only those with no selected ancestor (their subtrees come
+ * along anyway), sorted by on-screen (tree) order.
+ */
+function topLevelInDisplayOrder(tasks: Task[], ids: Iterable<TaskId>): Task[] {
+  const picked = new Set(ids);
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const hasPickedAncestor = (t: Task): boolean => {
+    let p = t.parentId ? byId.get(t.parentId) : undefined;
+    const seen = new Set<TaskId>();
+    while (p && !seen.has(p.id)) {
+      if (picked.has(p.id)) return true;
+      seen.add(p.id);
+      p = p.parentId ? byId.get(p.parentId) : undefined;
+    }
+    return false;
+  };
+  const rank = new Map(buildVisibleRows(tasks, { includeCollapsed: true }).map((r, i) => [r.task.id, i]));
+  return tasks
+    .filter((t) => picked.has(t.id) && !hasPickedAncestor(t))
+    .sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+}
+
+/**
+ * Where a row inserted "right below `ref`" goes: the first child of an
+ * expanded group, else the next sibling of `ref`, else the end of the root.
+ */
+function insertionPoint(tasks: Task[], ref: Task | undefined): { parentId: TaskId | null; insertOrder: number } {
+  if (ref && !ref.collapsed && tasks.some((t) => t.parentId === ref.id)) {
+    return { parentId: ref.id, insertOrder: -0.5 };
+  }
+  if (ref) return { parentId: ref.parentId, insertOrder: ref.order + 1 };
+  const rootMax = tasks.filter((t) => t.parentId === null).reduce((m, t) => Math.max(m, t.order), -1);
+  return { parentId: null, insertOrder: rootMax + 1 };
+}
+
 /** Every descendant id of `id` (not including `id`). */
 function collectDescendants(tasks: Task[], id: TaskId): TaskId[] {
   const out: TaskId[] = [];
@@ -466,7 +502,6 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     editingTaskId: null,
     inspectingTaskId: null,
     linkSourceId: null,
-    clipboard: null,
     confirmDeletePending: false,
     dirty: false,
     recoveryAvailable: false,
@@ -728,8 +763,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const id = nanoid(10);
       commit((d) => {
         const ref = afterId ? d.tasks.find((x) => x.id === afterId) : undefined;
-        const parentId = ref?.parentId ?? null;
-        const order = ref ? ref.order + 1 : d.tasks.length;
+        const { parentId, insertOrder: order } = insertionPoint(d.tasks, ref);
         // Shift siblings after the insertion point.
         for (const t of d.tasks) {
           if (t.parentId === parentId && t.order >= order) t.order += 1;
@@ -754,6 +788,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           color: null,
           cancelled: false,
         });
+        normaliseOrders(d.tasks);
       });
       set({ selectedTaskIds: new Set([id]), editingTaskId: id });
     },
@@ -837,20 +872,38 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     indentTask(id) {
+      const before = get().derived.project;
+      const self = before.tasks.find((x) => x.id === id);
+      if (!self) return;
+      const siblings = before.tasks
+        .filter((x) => x.parentId === self.parentId)
+        .sort((a, b) => a.order - b.order);
+      const idx = siblings.findIndex((x) => x.id === id);
+      if (idx <= 0) {
+        get().showAppToast(`'${self.name}' 위에 같은 단계의 작업이 없어 하위로 넣을 수 없습니다. 하위로 넣으면 바로 위 작업이 그룹이 됩니다.`, 'error');
+        return;
+      }
+      // New parent = the previous sibling in display order.
+      const newParent = siblings[idx - 1]!;
+      const wasLeaf = !before.tasks.some((x) => x.parentId === newParent.id);
       commit((d) => {
         const t = d.tasks.find((x) => x.id === id);
         if (!t) return;
-        // New parent = the previous sibling in display order.
-        const siblings = d.tasks
-          .filter((x) => x.parentId === t.parentId)
-          .sort((a, b) => a.order - b.order);
-        const idx = siblings.findIndex((x) => x.id === id);
-        if (idx <= 0) return;
-        const newParent = siblings[idx - 1]!;
         t.parentId = newParent.id;
-        const newSiblings = d.tasks.filter((x) => x.parentId === newParent.id);
-        t.order = newSiblings.length;
+        t.order = Number.MAX_SAFE_INTEGER; // last child; normalised below
+        normaliseOrders(d.tasks);
       });
+      // Keep the moved row visible.
+      if (newParent.collapsed) setCollapsed((x) => (x.id === newParent.id ? false : x.collapsed));
+      if (wasLeaf) {
+        const links = before.dependencies.filter((dep) => dep.fromId === newParent.id || dep.toId === newParent.id).length;
+        if (links > 0) {
+          get().showAppToast(
+            `'${newParent.name}'이(가) 그룹이 되었습니다. 그룹에는 연결이 적용되지 않아, '${newParent.name}'에 걸려 있던 연결 ${links}개는 이제 일정에 영향을 주지 않습니다. 필요하면 하위 작업끼리 다시 연결하세요. (되돌리기: Ctrl+Z)`,
+            'info',
+          );
+        }
+      }
     },
 
     outdentTask(id) {
@@ -949,102 +1002,97 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     moveTasks(taskIds, newParentId, afterId) {
-      if (taskIds.length === 0) return;
-      const ids = new Set(taskIds);
-      commit((d) => {
-        if (newParentId !== null && !d.tasks.some((t) => t.id === newParentId)) return;
-
-        const parentOf = (id: TaskId | null): TaskId | null =>
-          id ? (d.tasks.find((t) => t.id === id)?.parentId ?? null) : null;
-        const isDescendantOf = (maybeChild: TaskId, ancestor: TaskId): boolean => {
-          let p: TaskId | null = parentOf(maybeChild);
-          while (p) {
-            if (p === ancestor) return true;
-            p = parentOf(p);
-          }
-          return false;
-        };
-
-        // Refuse to move a task into itself or into one of its own descendants.
-        if (newParentId !== null) {
-          for (const id of ids) {
-            if (id === newParentId || isDescendantOf(newParentId, id)) return;
+      const all = get().derived.project.tasks;
+      const byId = new Map(all.map((t) => [t.id, t]));
+      const movers = topLevelInDisplayOrder(all, taskIds);
+      if (movers.length === 0) return '옮길 작업이 없습니다. 잘라낸 작업이 이미 삭제되었을 수 있습니다.';
+      if (newParentId !== null && !byId.has(newParentId)) return '붙여넣을 위치를 찾을 수 없습니다.';
+      // Refuse moving a task into itself or its own subtree.
+      if (newParentId !== null) {
+        for (const m of movers) {
+          if (m.id === newParentId || collectDescendants(all, m.id).includes(newParentId)) {
+            return `'${m.name}'을(를) 자기 자신이나 자기 하위 작업 안으로는 옮길 수 없습니다. 다른 위치를 고르세요.`;
           }
         }
-
-        // Top-level movers only: a cut child whose ancestor is also cut rides
-        // along with that ancestor's subtree, so skip it here.
-        const movers = d.tasks
-          .filter((t) => ids.has(t.id))
-          .filter((t) => ![...ids].some((other) => other !== t.id && isDescendantOf(t.id, other)))
-          .sort((a, b) => a.order - b.order);
-        if (movers.length === 0) return;
-
-        const moverSet = new Set(movers.map((m) => m.id));
+      }
+      const moverIds = new Set(movers.map((m) => m.id));
+      commit((d) => {
         const dest = d.tasks
-          .filter((t) => t.parentId === newParentId && !moverSet.has(t.id))
-          .sort((a, b) => a.order - b.order);
-
-        let insertAt = dest.length; // default: append at end
+          .filter((t) => t.parentId === newParentId && !moverIds.has(t.id))
+          .sort((x, y) => x.order - y.order);
+        let insertAt = dest.length; // default: append at the end of the group
         if (afterId) {
           const idx = dest.findIndex((t) => t.id === afterId);
           if (idx !== -1) insertAt = idx + 1;
         }
-
-        for (const m of movers) m.parentId = newParentId;
-        const combined = [...dest.slice(0, insertAt), ...movers, ...dest.slice(insertAt)];
-        combined.forEach((t, i) => { t.order = i; });
+        // Keep the on-screen order of the moved rows (they may come from
+        // different groups, whose `order` values are not comparable).
+        const moved = movers.map((m) => d.tasks.find((t) => t.id === m.id)!).filter(Boolean);
+        for (const m of moved) m.parentId = newParentId;
+        [...dest.slice(0, insertAt), ...moved, ...dest.slice(insertAt)].forEach((t, i) => { t.order = i; });
+        normaliseOrders(d.tasks);
       });
-      set({ selectedTaskIds: new Set(taskIds) });
+      // Show where the rows went: expand the destination group chain.
+      if (newParentId) {
+        const chain = new Set<TaskId>();
+        let cur: TaskId | null = newParentId;
+        while (cur) { chain.add(cur); cur = get().derived.project.tasks.find((t) => t.id === cur)?.parentId ?? null; }
+        setCollapsed((t) => (chain.has(t.id) ? false : t.collapsed));
+      }
+      set({ selectedTaskIds: new Set(movers.map((m) => m.id)) });
+      return null;
     },
 
     duplicateSelected() {
-      const ids = get().selectedTaskIds;
-      if (ids.size === 0) return;
-      const newIds: TaskId[] = [];
+      const ids = [...get().selectedTaskIds];
+      if (ids.length === 0) return;
+      get().duplicateTasks(ids);
+    },
+
+    duplicateTasks(ids) {
+      const all = get().derived.project.tasks;
+      const roots = topLevelInDisplayOrder(all, ids);
+      if (roots.length === 0) return [];
+      const newRoots: TaskId[] = [];
+      let copied = 0;
       commit((d) => {
-        for (const id of ids) {
-          const t = d.tasks.find((x) => x.id === id);
-          if (!t) continue;
-          const copy: Task = { ...structuredClone(t), id: nanoid(10), order: t.order + 0.5 };
-          newIds.push(copy.id);
-          d.tasks.push(copy);
+        for (const root of roots) {
+          const subtree = [root.id, ...collectDescendants(d.tasks, root.id)];
+          const idMap = new Map<TaskId, TaskId>(subtree.map((sid) => [sid, nanoid(10)]));
+          for (const sid of subtree) {
+            const orig = d.tasks.find((t) => t.id === sid);
+            if (!orig) continue;
+            d.tasks.push({
+              ...structuredClone(orig),
+              id: idMap.get(sid)!,
+              parentId: sid === root.id ? orig.parentId : idMap.get(orig.parentId!)!,
+              // Root copy goes right after its original; children keep their order.
+              order: sid === root.id ? orig.order + 0.5 : orig.order,
+            });
+            copied++;
+          }
+          // Links between tasks inside the copied subtree are copied too.
+          for (const dep of [...d.dependencies]) {
+            const from = idMap.get(dep.fromId);
+            const to = idMap.get(dep.toId);
+            if (from && to) d.dependencies.push({ ...dep, id: nanoid(8), fromId: from, toId: to });
+          }
+          newRoots.push(idMap.get(root.id)!);
         }
         normaliseOrders(d.tasks);
       });
-      set({ selectedTaskIds: new Set(newIds) });
+      set({ selectedTaskIds: new Set(newRoots) });
+      get().showAppToast(
+        copied > newRoots.length
+          ? `작업 ${newRoots.length}개를 하위 작업까지 모두 ${copied}개 복제했습니다.`
+          : `작업 ${newRoots.length}개를 복제했습니다.`,
+        'success',
+      );
+      return newRoots;
     },
 
     duplicateTask(id) {
-      let newRootId: TaskId | null = null;
-      commit((d) => {
-        const snapshot = [...d.tasks];
-        const subtreeIds: TaskId[] = [];
-        const collect = (pid: TaskId): void => {
-          subtreeIds.push(pid);
-          for (const t of snapshot) {
-            if (t.parentId === pid) collect(t.id);
-          }
-        };
-        collect(id);
-        const idMap = new Map<TaskId, TaskId>();
-        for (const sid of subtreeIds) idMap.set(sid, nanoid(10) as TaskId);
-        newRootId = idMap.get(id) ?? null;
-        for (const sid of subtreeIds) {
-          const orig = snapshot.find((t) => t.id === sid);
-          if (!orig) continue;
-          const newId = idMap.get(sid)!;
-          const newParentId = sid === id ? orig.parentId : (idMap.get(orig.parentId!) ?? orig.parentId);
-          d.tasks.push({
-            ...structuredClone(orig),
-            id: newId,
-            parentId: newParentId,
-            order: sid === id ? orig.order + 0.5 : orig.order,
-          });
-        }
-        normaliseOrders(d.tasks);
-      });
-      if (newRootId) set({ selectedTaskIds: new Set([newRootId]) });
+      get().duplicateTasks([id]);
     },
 
     moveSubtreeBy(id, deltaDays) {
@@ -1074,23 +1122,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     groupSelectedTasks() {
-      const ids = get().selectedTaskIds;
-      if (ids.size < 2) return;
-      const allTasks = get().derived.project.tasks;
-      const isDescOf = (child: TaskId, ancestor: TaskId): boolean => {
-        let p: TaskId | null = allTasks.find((t) => t.id === child)?.parentId ?? null;
-        while (p) { if (p === ancestor) return true; p = allTasks.find((t) => t.id === p!)?.parentId ?? null; }
-        return false;
-      };
-      const topLevel = allTasks
-        .filter((t) => ids.has(t.id))
-        .filter((t) => ![...ids].some((other) => other !== t.id && isDescOf(t.id, other)))
-        .sort((a, b) => a.order - b.order);
-      if (topLevel.length < 2) return;
+      const ids = [...get().selectedTaskIds];
+      const all = get().derived.project.tasks;
+      const topLevel = topLevelInDisplayOrder(all, ids);
+      if (topLevel.length < 2) {
+        get().showAppToast('묶으려면 작업을 2개 이상 선택하세요. (Ctrl+클릭 또는 Shift+클릭)', 'error');
+        return;
+      }
       const parents = new Set(topLevel.map((t) => t.parentId));
-      const commonParent: TaskId | null = parents.size === 1 ? ([...parents][0] ?? null) : null;
+      if (parents.size > 1) {
+        get().showAppToast(
+          '서로 다른 그룹에 있는 작업은 한 그룹으로 묶을 수 없습니다. 먼저 같은 그룹으로 옮긴 뒤(잘라내기 → 붙여넣기) 묶으세요.',
+          'error',
+        );
+        return;
+      }
+      const commonParent = topLevel[0]!.parentId;
       const first = topLevel[0]!;
       const newId = nanoid(10) as TaskId;
+      const topIds = new Set(topLevel.map((t) => t.id));
       commit((d) => {
         d.tasks.push({
           id: newId, parentId: commonParent, name: '새 그룹',
@@ -1100,48 +1150,19 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           constraintDate: null, manuallyScheduled: false,
           order: first.order - 0.5, color: null, cancelled: false,
         });
-        const selectedSet = new Set([...ids]);
-        for (const t of d.tasks) {
-          if (selectedSet.has(t.id)) t.parentId = newId;
-        }
-        normaliseOrders(d.tasks);
-      });
-      set({ selectedTaskIds: new Set([newId]), editingTaskId: newId });
-    },
-
-    copySelected() {
-      const ids = get().selectedTaskIds;
-      const tasks = get().derived.project.tasks.filter((t) => ids.has(t.id));
-      set({ clipboard: { tasks: structuredClone(tasks) } });
-    },
-
-    paste() {
-      const clip = get().clipboard;
-      if (!clip || clip.tasks.length === 0) return;
-      const newIds: TaskId[] = [];
-      commit((d) => {
-        // Place pasted copies at the end of the root sibling group, preserving
-        // their relative order. Copies inherit the originals' `order` from the
-        // clone; without fresh values they'd interleave with existing rows at
-        // matching order positions (scattered, non-consecutive paste).
-        const maxRootOrder = d.tasks
-          .filter((t) => t.parentId === null)
-          .reduce((m, t) => Math.max(m, t.order), -1);
-        const ordered = [...clip.tasks].sort((a, b) => a.order - b.order);
-        ordered.forEach((t, i) => {
-          const copy: Task = {
-            ...structuredClone(t),
-            id: nanoid(10),
-            parentId: null,
-            order: maxRootOrder + 1 + i,
-          };
-          newIds.push(copy.id);
-          d.tasks.push(copy);
+        // Only the top-level picks move under the new group; their own children
+        // stay with them (they used to be pulled out of their parents).
+        topLevel.forEach((orig, i) => {
+          const t = d.tasks.find((x) => x.id === orig.id);
+          if (t && topIds.has(t.id)) { t.parentId = newId; t.order = i; }
         });
         normaliseOrders(d.tasks);
       });
-      set({ selectedTaskIds: new Set(newIds) });
+      set({ selectedTaskIds: new Set([newId]), editingTaskId: newId });
+      get().showAppToast(`작업 ${topLevel.length}개를 '새 그룹'으로 묶었습니다. 그룹 이름을 바로 입력하세요.`, 'info');
     },
+
+
 
     importTsvTasks(text) {
       const badDates: string[] = [];
@@ -1202,10 +1223,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       const newIds: TaskId[] = [];
       commit((d) => {
         const ref = afterId ? d.tasks.find((x) => x.id === afterId) : undefined;
-        // New rows become siblings of the reference task (or root-level when
-        // appending), inserted right after it.
-        const parentId = ref?.parentId ?? null;
-        const insertOrder = ref ? ref.order + 1 : d.tasks.filter((t) => t.parentId === parentId).length;
+        // "Right below this row" on screen: below an expanded group's title row
+        // is its first child slot; otherwise the rows become siblings after
+        // `ref` (or are appended at the root).
+        const { parentId, insertOrder } = insertionPoint(d.tasks, ref);
         // Shift later siblings down to make room for the inserted block.
         for (const t of d.tasks) {
           if (t.parentId === parentId && t.order >= insertOrder) t.order += dataRows.length;
@@ -1248,6 +1269,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
             cancelled: false,
           });
         });
+        normaliseOrders(d.tasks);
       });
       reportBadDates(badDates, get().showAppToast);
       set({ selectedTaskIds: new Set(newIds) });
