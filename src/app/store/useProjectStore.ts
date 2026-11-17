@@ -16,6 +16,7 @@ import type { FilterMode } from '@/features/view/viewFilter';
 import { recalc, type DerivedSchedule } from './recalc';
 import { shareProject } from './structuralShare';
 import { normalizeProject } from './normalizeProject';
+import { formatDayKo, parseDateInput } from '@/shared/date/parseDateInput';
 import { WorkingCalendar } from '@/services/scheduler/workCalendar';
 import { wouldCreateCycle } from '@/services/dependency/graph';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
@@ -63,7 +64,7 @@ interface ViewState {
    */
   ganttScrollTo: string | null;
   /** App-level notification toast. Cleared automatically by the App shell after display. */
-  appToast: { msg: string; type: 'success' | 'error'; id: number } | null;
+  appToast: { msg: string; type: 'success' | 'error' | 'info'; id: number } | null;
 }
 
 interface ClipboardState {
@@ -153,6 +154,13 @@ interface ProjectStore {
   insertTsvTasks: (afterId: TaskId | null, text: string) => number;
   /** Update existing tasks in-place from clipboard TSV (paste onto selection). */
   updateTasksFromTsv: (taskIds: string[], tsvText: string) => void;
+  /**
+   * Change a task's start or end from free text typed by the user. Parses and
+   * validates the input, applies it (a new start moves the task and keeps its
+   * duration) and shows a detailed notice when the input is rejected or the
+   * schedule adjusts it. Returns false when nothing was changed.
+   */
+  editTaskDate: (id: TaskId, field: 'start' | 'end', raw: string) => boolean;
   /** Run several edits as ONE undo step (e.g. paste that updates and adds rows). */
   transact: (fn: () => void) => void;
   /**
@@ -237,7 +245,7 @@ interface ProjectStore {
   /** Called by GanttChart after it has consumed a scrollGanttToDate request. */
   clearGanttScroll: () => void;
   /** Show an app-level toast notification. Type defaults to 'error'. */
-  showAppToast: (msg: string, type?: 'success' | 'error') => void;
+  showAppToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
   clearAppToast: () => void;
 }
 
@@ -301,14 +309,51 @@ export function parseTsvDataRows(text: string): string[][] {
  * later — and the start→end span becomes the working-day duration. Tasks the
  * user explicitly switched to manual scheduling keep their exact dates.
  */
-function applyDateEdit(t: Task, cal: WorkingCalendar, startEdited: boolean): void {
+function applyDateEdit(t: Task, cal: WorkingCalendar, startEdited: boolean, endEdited = !startEdited): void {
+  if (startEdited && !endEdited) {
+    // A new start MOVES the task: the duration is kept (it used to collapse to
+    // one day when the new start passed the old end).
+    t.end = t.isMilestone ? t.start : cal.finishDateFor(t.start, Math.max(1, t.durationDays));
+  }
   if (t.end < t.start) t.end = t.start;
-  if (t.manuallyScheduled) return;
-  if (startEdited) {
+  if (t.isMilestone) t.end = t.start;
+  if (!t.manuallyScheduled && startEdited) {
     t.constraint = 'snet';
     t.constraintDate = t.start;
   }
-  t.durationDays = t.isMilestone ? 0 : Math.max(1, cal.workingDaysBetween(t.start, t.end));
+  if (endEdited || t.manuallyScheduled) {
+    t.durationDays = t.isMilestone ? 0 : Math.max(1, cal.workingDaysBetween(t.start, t.end));
+  }
+}
+
+/**
+ * Parse a date cell from pasted rows leniently (same rules as typing). Records
+ * a readable reason in `bad` for non-empty cells that are not dates.
+ */
+function lenientDay(raw: string | undefined, bad: string[], lineNo: number): string | undefined {
+  if (!raw || !raw.trim()) return undefined;
+  const r = parseDateInput(raw);
+  if (r.ok) return r.iso;
+  bad.push(`${lineNo}행: ${r.message}`);
+  return undefined;
+}
+
+/** Tell the user which pasted date cells could not be read. */
+function reportBadDates(bad: string[], show: (msg: string, type: 'error') => void): void {
+  if (bad.length === 0) return;
+  const more = bad.length > 3 ? `\n…그 밖에 ${bad.length - 3}칸` : '';
+  show(`날짜 ${bad.length}칸을 알아볼 수 없어 비워 두었습니다(새 작업은 프로젝트 시작일로 넣음).\n${bad.slice(0, 3).join('\n')}${more}`, 'error');
+}
+
+/** Every descendant id of `id` (not including `id`). */
+function collectDescendants(tasks: Task[], id: TaskId): TaskId[] {
+  const out: TaskId[] = [];
+  const stack = [id];
+  while (stack.length > 0) {
+    const cur = stack.pop()!;
+    for (const t of tasks) if (t.parentId === cur) { out.push(t.id); stack.push(t.id); }
+  }
+  return out;
 }
 
 function calendarOf(d: Project): WorkingCalendar {
@@ -556,22 +601,76 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
         if (typeof normalized.start === 'string') normalized.start = norm(normalized.start);
         if (typeof normalized.end   === 'string') normalized.end   = norm(normalized.end);
         Object.assign(t, normalized);
-        // If start moved past end, snap end to the new start.
-        if (t.start > t.end) t.end = t.start;
         if (normalized.start !== undefined || normalized.end !== undefined) {
-          applyDateEdit(t, calendarOf(d), normalized.start !== undefined);
+          applyDateEdit(t, calendarOf(d), normalized.start !== undefined, normalized.end !== undefined);
         }
       }, { reschedule: affectsSchedule([patch]) });
-      // Tell the user when predecessors kept the task from moving where asked.
-      if (typeof patch.start === 'string') {
-        const want = /^\d{8}$/.test(patch.start)
-          ? `${patch.start.slice(0, 4)}-${patch.start.slice(4, 6)}-${patch.start.slice(6, 8)}`
-          : patch.start;
-        const got = get().derived.project.tasks.find((x) => x.id === id);
-        if (got && !got.manuallyScheduled && got.start > want) {
-          get().showAppToast(`선행 작업 때문에 시작일이 ${got.start}(으)로 조정되었습니다.`, 'error');
+    },
+
+    editTaskDate(id, field, raw) {
+      const state = get();
+      const project = state.derived.project;
+      const task = project.tasks.find((t) => t.id === id);
+      if (!task) return false;
+      const fail = (msg: string): false => { get().showAppToast(msg, 'error'); return false; };
+      const label = `'${task.name || '이름 없는 작업'}'`;
+      const current = field === 'start' ? task.start : task.end;
+
+      const parsed = parseDateInput(raw, Number(current.slice(0, 4)) || undefined);
+      if (!parsed.ok) return fail(parsed.message);
+      const iso = parsed.iso;
+      if (iso === current) return true;
+
+      const isGroup = project.tasks.some((t) => t.parentId === id);
+      if (isGroup) {
+        if (field === 'end') {
+          return fail(`${label}은(는) 그룹이라 종료일이 하위 작업의 마지막 종료일로 자동 계산됩니다. 기간을 바꾸려면 하위 작업의 날짜를 바꾸세요.`);
+        }
+        const delta = diffDaysISO(task.start, iso);
+        const count = collectDescendants(project.tasks, id).length;
+        get().moveSubtreeBy(id, delta);
+        get().showAppToast(
+          `그룹 ${label}을(를) 하위 작업 ${count}개와 함께 ${Math.abs(delta)}일 ${delta > 0 ? '뒤로' : '앞으로'} 옮겼습니다.`,
+          'info',
+        );
+        return true;
+      }
+      if (field === 'end' && task.isMilestone) {
+        return fail(`${label}은(는) 마일스톤(하루짜리 기준점)이라 종료일을 따로 정할 수 없습니다. 시작일을 바꾸세요.`);
+      }
+      if (field === 'end' && iso < task.start) {
+        return fail(`종료일 ${formatDayKo(iso)}이(가) 시작일 ${formatDayKo(task.start)}보다 빠릅니다. 더 앞으로 당기려면 시작일을 먼저 바꾸세요.`);
+      }
+
+      get().updateTask(id, { [field]: iso } as Partial<Task>);
+
+      // Explain any difference between what was typed and what the schedule allows.
+      const after = get().derived.project;
+      const got = after.tasks.find((t) => t.id === id);
+      if (!got) return true;
+      const cal = calendarOf(after);
+      const result = field === 'start' ? got.start : got.end;
+      if (result !== iso) {
+        const preds = after.dependencies
+          .filter((dep) => dep.toId === id)
+          .map((dep) => after.tasks.find((t) => t.id === dep.fromId))
+          .filter((t): t is Task => !!t && !t.cancelled);
+        if (field === 'start' && !cal.isWorkingDay(iso) && result === cal.nextWorkingDay(iso)) {
+          get().showAppToast(`${formatDayKo(iso)}은(는) 쉬는 날이라 다음 근무일 ${formatDayKo(result)}부터 시작합니다.`, 'info');
+        } else if (field === 'end' && !cal.isWorkingDay(iso) && result === cal.previousWorkingDay(iso)) {
+          get().showAppToast(`${formatDayKo(iso)}은(는) 쉬는 날이라 종료일을 바로 앞 근무일 ${formatDayKo(result)}로 맞췄습니다.`, 'info');
+        } else if (preds.length > 0 && got.start > (field === 'start' ? iso : task.start)) {
+          const names = preds.slice(0, 2).map((t) => `'${t.name}'`).join(', ') + (preds.length > 2 ? ` 외 ${preds.length - 2}개` : '');
+          get().showAppToast(
+            `${label}은(는) ${names}이(가) 끝난 뒤에 시작하도록 연결되어 있어 ${formatDayKo(got.start)}부터 시작합니다. ` +
+            '연결을 무시하고 원하는 날짜에 두려면 막대를 더블클릭해 \'수동 고정\'을 켜세요.',
+            'info',
+          );
+        } else {
+          get().showAppToast(`${label}의 ${field === 'start' ? '시작일' : '종료일'}이 일정 계산에 따라 ${formatDayKo(result)}로 정해졌습니다.`, 'info');
         }
       }
+      return true;
     },
 
     transact(fn) {
@@ -1045,19 +1144,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     importTsvTasks(text) {
+      const badDates: string[] = [];
       const dataRows = parseTsvDataRows(text);
       if (dataRows.length === 0) return;
       const newIds: TaskId[] = [];
       commit((d) => {
         const baseOrder = d.tasks.length;
         dataRows.forEach((cols, i) => {
-          const [rawName, rawStart, rawEnd] = cols;
+          const [rawName, rawStart0, rawEnd0] = cols;
+          const rawStart = lenientDay(rawStart0, badDates, i + 1);
+          const rawEnd = lenientDay(rawEnd0, badDates, i + 1);
           // 4-col legacy: name,start,end,progress
           // 6-col new:    name,start,end,duration(skip),progress,priority
           const rawProgress = cols.length >= 5 ? cols[4] : cols[3];
           const rawPriority = cols.length >= 6 ? cols[5] : undefined;
           const name = (rawName || '새 작업').slice(0, 200);
-          const isValidISO = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+          const isValidISO = (v: string | undefined): v is string => !!v;
           const startDate = isValidISO(rawStart) ? rawStart : d.startDate;
           const endDate = isValidISO(rawEnd) && rawEnd >= startDate ? rawEnd : startDate;
           const progress = rawProgress
@@ -1089,10 +1191,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           });
         });
       });
+      reportBadDates(badDates, get().showAppToast);
       set({ selectedTaskIds: new Set(newIds) });
     },
 
     insertTsvTasks(afterId, text) {
+      const badDates: string[] = [];
       const dataRows = parseTsvDataRows(text);
       if (dataRows.length === 0) return 0;
       const newIds: TaskId[] = [];
@@ -1107,11 +1211,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           if (t.parentId === parentId && t.order >= insertOrder) t.order += dataRows.length;
         }
         dataRows.forEach((cols, i) => {
-          const [rawName, rawStart, rawEnd] = cols;
+          const [rawName, rawStart0, rawEnd0] = cols;
+          const rawStart = lenientDay(rawStart0, badDates, i + 1);
+          const rawEnd = lenientDay(rawEnd0, badDates, i + 1);
           const rawProgress = cols.length >= 5 ? cols[4] : cols[3];
           const rawPriority = cols.length >= 6 ? cols[5] : undefined;
           const name = (rawName || '새 작업').slice(0, 200);
-          const isValidISO = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+          const isValidISO = (v: string | undefined): v is string => !!v;
           const startDate = isValidISO(rawStart) ? rawStart : d.startDate;
           const endDate = isValidISO(rawEnd) && rawEnd >= startDate ? rawEnd : startDate;
           const progress = rawProgress
@@ -1143,11 +1249,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           });
         });
       });
+      reportBadDates(badDates, get().showAppToast);
       set({ selectedTaskIds: new Set(newIds) });
       return newIds.length;
     },
 
     updateTasksFromTsv(taskIds, tsvText) {
+      const badDates: string[] = [];
       const dataRows = parseTsvDataRows(tsvText);
       if (dataRows.length === 0 || taskIds.length === 0) return;
       commit((d) => {
@@ -1157,15 +1265,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           if (!cols) return;
           const task = d.tasks.find((t) => t.id === id);
           if (!task) return;
-          const [rawName, rawStart, rawEnd] = cols;
+          const [rawName, rawStart0, rawEnd0] = cols;
+          const rawStart = lenientDay(rawStart0, badDates, i + 1);
+          const rawEnd = lenientDay(rawEnd0, badDates, i + 1);
           const rawProgress = cols.length >= 5 ? cols[4] : cols[3];
           const rawPriority = cols.length >= 6 ? cols[5] : undefined;
-          const isValidISO = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+          const isValidISO = (v: string | undefined): v is string => !!v;
           if (rawName?.trim()) task.name = rawName.trim().slice(0, 200);
-          if (isValidISO(rawStart) && isValidISO(rawEnd) && rawEnd >= rawStart) {
+          // A group's dates are rolled up from its children: never overwrite them.
+          const isGroup = d.tasks.some((t) => t.parentId === task.id);
+          if (isGroup && (rawStart || rawEnd)) {
+            badDates.push(`${i + 1}행: '${task.name}'은(는) 그룹이라 날짜가 자동 계산되므로 날짜를 건너뛰었습니다.`);
+          } else if (isValidISO(rawStart) && isValidISO(rawEnd) && rawEnd < rawStart) {
+            badDates.push(`${i + 1}행: 종료일 ${rawEnd}이(가) 시작일 ${rawStart}보다 빨라 날짜를 건너뛰었습니다.`);
+          } else if (isValidISO(rawStart) && isValidISO(rawEnd)) {
             task.start = rawStart;
             task.end = rawEnd;
-            applyDateEdit(task, cal, true);
+            applyDateEdit(task, cal, true, true);
           } else if (isValidISO(rawStart)) {
             const delta = diffDaysISO(task.start, rawStart);
             task.start = rawStart;
@@ -1182,6 +1298,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
           }
         });
       });
+      reportBadDates(badDates, get().showAppToast);
     },
 
     batchUpdateTasks(updates) {

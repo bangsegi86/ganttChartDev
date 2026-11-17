@@ -5,6 +5,7 @@ import { Ban, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, Grip
 import { parseTsvDataRows, useProjectStore } from '@/app/store/useProjectStore';
 import { buildVisibleRows, filterRowsByName, type VisibleRow } from './treeModel';
 import { askChoice } from '@/shared/ui/ChoiceDialog';
+import { parseDateInput } from '@/shared/date/parseDateInput';
 import { useVisibleTasks } from '@/features/view/viewFilter';
 import { HEADER_HEIGHT, SCROLL_BOTTOM_PADDING } from '@/features/gantt/layout';
 import { cn } from '@/shared/ui/cn';
@@ -78,20 +79,22 @@ function getCellText(task: Task, colKey: string, resources?: Resource[]): string
 }
 
 /** Normalise date input: accepts YYYY-MM-DD and YYYYMMDD. Returns null if invalid. */
-function normalizeDate(v: string): string | null {
-  const s = v.trim().replace(/\//g, '-');
-  const n = /^\d{8}$/.test(s) ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : s;
-  return /^\d{4}-\d{2}-\d{2}$/.test(n) ? n : null;
+/** Lenient date parsing shared with typed input; null when not a date. */
+function normalizeDate(v: string, issues?: string[]): string | null {
+  const r = parseDateInput(v);
+  if (r.ok) return r.iso;
+  issues?.push(r.message);
+  return null;
 }
 
 /** Convert a pasted string value into a Task patch for a given column. Returns null if invalid/read-only. */
-function parseCellPatch(colKey: string, raw: string, resources?: Resource[]): Partial<Task> | null {
+function parseCellPatch(colKey: string, raw: string, resources?: Resource[], issues?: string[]): Partial<Task> | null {
   const v = raw.trim();
   if (!v) return null;
   switch (colKey) {
     case 'name': return { name: v.slice(0, 200) };
-    case 'start': { const d = normalizeDate(v); return d ? { start: d } : null; }
-    case 'end':   { const d = normalizeDate(v); return d ? { end: d } : null; }
+    case 'start': { const d = normalizeDate(v, issues); return d ? { start: d } : null; }
+    case 'end':   { const d = normalizeDate(v, issues); return d ? { end: d } : null; }
     case 'progress': {
       const n = Math.max(0, Math.min(100, parseInt(v, 10) || 0));
       return { progress: n };
@@ -562,6 +565,11 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
 
           // Single-value paste into active cell
           if (cell && !isMultiValue) {
+            if (cell.colKey === 'start' || cell.colKey === 'end') {
+              // Same validation and notices as typing into the cell.
+              useProjectStore.getState().editTaskDate(cell.taskId, cell.colKey, trimmed);
+              return;
+            }
             const patch = parseCellPatch(cell.colKey, trimmed, res);
             if (patch) batchUpdateTasksRef.current([{ id: cell.taskId, patch }]);
             return;
@@ -574,15 +582,38 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
             if (startR === -1 || startC === -1) return;
 
             const grid = parseTsvGrid(trimmed);
-            /** Turn one pasted line into a patch, column-aligned from the active cell. */
-            const rowPatch = (rowVals: string[]): Partial<Task> => {
+            /** Cells skipped during this paste, reported in one notice at the end. */
+            const skipped: string[] = [];
+            const allTasks = useProjectStore.getState().derived.project.tasks;
+            const parentIds = new Set(allTasks.map((t) => t.parentId).filter(Boolean));
+            /**
+             * Turn one pasted line into a patch, column-aligned from the active
+             * cell. `target` is the task being overwritten (null for a new row).
+             */
+            const rowPatch = (rowVals: string[], lineNo: number, target: Task | null): Partial<Task> => {
               const merged: Partial<Task> = {};
               for (let dc = 0; dc < rowVals.length; dc++) {
                 const col = curCols[startC + dc];
                 if (!col) break;
                 if (!PASTEABLE_COLS.has(col.key)) continue;
-                const patch = parseCellPatch(col.key, rowVals[dc] ?? '', res);
+                const issues: string[] = [];
+                const patch = parseCellPatch(col.key, rowVals[dc] ?? '', res, issues);
+                if (issues.length > 0) skipped.push(`${lineNo}행 ${col.label}: ${issues[0]}`);
                 if (patch) Object.assign(merged, patch);
+              }
+              // Date rules that typing also enforces.
+              if (target && parentIds.has(target.id) && (merged.start || merged.end)) {
+                delete merged.start; delete merged.end;
+                skipped.push(`${lineNo}행: '${target.name}'은(는) 그룹이라 날짜가 하위 작업에서 자동 계산되므로 날짜를 건너뛰었습니다.`);
+              }
+              if (target?.isMilestone && merged.end) {
+                delete merged.end;
+                skipped.push(`${lineNo}행: '${target.name}'은(는) 마일스톤이라 종료일을 건너뛰었습니다.`);
+              }
+              const start = merged.start ?? target?.start;
+              if (merged.end && start && merged.end < start) {
+                skipped.push(`${lineNo}행: 종료일 ${merged.end}이(가) 시작일 ${start}보다 빨라 종료일을 건너뛰었습니다.`);
+                delete merged.end;
               }
               return merged;
             };
@@ -629,7 +660,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
 
             const updates: { id: string; patch: Partial<Task> }[] = [];
             for (let dr = 0; dr < fill; dr++) {
-              const merged = rowPatch(grid[dr] ?? []);
+              const merged = rowPatch(grid[dr] ?? [], dr + 1, curRows[startR + dr]!.task);
               if (Object.keys(merged).length > 0) updates.push({ id: curRows[startR + dr]!.task.id, patch: merged });
             }
             const store = useProjectStore.getState();
@@ -639,12 +670,19 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
               if (extra > 0) {
                 const ids = store.appendBlankTasks(startRow.task.parentId, extra);
                 const added = ids
-                  .map((id, i) => ({ id, patch: rowPatch(grid[fill + i] ?? []) }))
+                  .map((id, i) => ({ id, patch: rowPatch(grid[fill + i] ?? [], fill + i + 1, null) }))
                   .filter((u) => Object.keys(u.patch).length > 0);
                 if (added.length > 0) store.batchUpdateTasks(added);
                 store.setSelectedTaskIds(new Set(ids));
               }
             });
+            if (skipped.length > 0) {
+              const more = skipped.length > 3 ? `\n…그 밖에 ${skipped.length - 3}칸` : '';
+              store.showAppToast(
+                `붙여넣기는 했지만 ${skipped.length}칸은 건너뛰었습니다.\n${skipped.slice(0, 3).join('\n')}${more}`,
+                'error',
+              );
+            }
             return;
           }
 

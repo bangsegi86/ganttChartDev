@@ -25,7 +25,7 @@ import { Button } from '@/shared/ui/Button';
 import { bridge } from '@/shared/bridge';
 import { HelpDialog, type HelpSection } from '@/features/help/HelpDialog';
 import { ChoiceDialogHost } from '@/shared/ui/ChoiceDialog';
-import { TooltipLayer } from '@/shared/ui/Tooltip';
+import { TooltipLayer, tipProps } from '@/shared/ui/Tooltip';
 import { newProjectSafely, openProjectSafely } from '@/app/guardUnsaved';
 
 type DialogKind = 'holidays' | 'resources' | 'calendar' | 'baselines' | 'viewGroups' | 'markers' | null;
@@ -65,7 +65,9 @@ export default function App() {
   useEffect(() => {
     if (!appToast) return;
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => clearAppToast(), 4500);
+    // Longer messages stay longer (≈ reading time), 4.5–12 s.
+    const ms = Math.min(12_000, 4_500 + appToast.msg.length * 45);
+    toastTimerRef.current = setTimeout(() => clearAppToast(), ms);
     return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
   }, [appToast?.id, clearAppToast]);
 
@@ -248,11 +250,16 @@ export default function App() {
       {/* App-level toast notification */}
       {appToast && (
         <div
-          className={`fixed bottom-8 left-1/2 z-[9999] -translate-x-1/2 rounded-full border px-5 py-2 text-xs font-medium shadow-xl transition-all ${
+          role={appToast.type === 'error' ? 'alert' : 'status'}
+          onClick={clearAppToast}
+          className={`fixed bottom-8 left-1/2 z-[9999] max-w-[min(640px,90vw)] -translate-x-1/2 cursor-pointer whitespace-pre-line rounded-xl border px-5 py-2.5 text-xs font-medium leading-relaxed shadow-xl backdrop-blur transition-all ${
             appToast.type === 'error'
-              ? 'border-red-500/40 bg-red-500/10 text-red-400'
-              : 'border-green-500/40 bg-green-500/10 text-green-400'
+              ? 'border-red-500/40 bg-surface/95 text-red-400'
+              : appToast.type === 'info'
+                ? 'border-accent/40 bg-surface/95 text-content'
+                : 'border-green-500/40 bg-surface/95 text-green-400'
           }`}
+          {...tipProps('알림', '클릭하면 닫힙니다.')}
         >
           {appToast.msg}
         </div>

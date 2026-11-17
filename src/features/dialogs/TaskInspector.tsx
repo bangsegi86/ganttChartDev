@@ -2,7 +2,6 @@ import { Modal } from '@/shared/ui/Modal';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import { useState, useEffect, useRef } from 'react';
 import type { ConstraintType, Priority } from '@/entities';
-import { addDaysISO } from '@/shared/date/dateUtils';
 import { CalendarDays } from 'lucide-react';
 
 const PRIORITIES: { value: Priority; label: string; color: string }[] = [
@@ -19,16 +18,6 @@ const CONSTRAINTS: { value: ConstraintType; label: string }[] = [
   { value: 'mfo',  label: '반드시 이 날 종료 (MFO)' },
 ];
 
-/** Normalise any common date string to YYYY-MM-DD, or return null. */
-function normalizeDate(raw: string): string | null {
-  const s = raw.trim().replace(/[./]/g, '-');               // . and / → -
-  const compact = s.replace(/-/g, '');                       // strip hyphens for digit-only check
-  if (/^\d{8}$/.test(compact)) {
-    return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  return null;
-}
 
 /** Full task editor for fields not surfaced in the grid. */
 export function TaskInspector() {
@@ -55,24 +44,15 @@ export function TaskInspector() {
   if (!inspectingTaskId || !task) return null;
 
   const commitDate = (field: 'start' | 'end', raw: string) => {
-    const normalized = normalizeDate(raw);
-    if (!normalized) {
-      if (field === 'start') setStartDraft(task.start);
-      else setEndDraft(task.end);
+    // Same parsing, validation and notices as the grid (see editTaskDate).
+    const current = field === 'start' ? task.start : task.end;
+    if (!raw.trim() || raw.trim() === current) {
+      if (field === 'start') setStartDraft(task.start); else setEndDraft(task.end);
       return;
     }
-
-    if (field === 'start') {
-      if (normalized >= task.end) {
-        // Auto-advance end to start + 1 day
-        const newEnd = addDaysISO(normalized, 1);
-        updateTask(task.id, { start: normalized, end: newEnd });
-        setEndDraft(newEnd);
-      } else {
-        updateTask(task.id, { start: normalized });
-      }
-    } else {
-      updateTask(task.id, { end: normalized });
+    const ok = useProjectStore.getState().editTaskDate(task.id, field, raw);
+    if (!ok) {
+      if (field === 'start') setStartDraft(task.start); else setEndDraft(task.end);
     }
   };
 

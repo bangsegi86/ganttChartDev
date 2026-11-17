@@ -1,3 +1,4 @@
+import { tipProps } from '@/shared/ui/Tooltip';
 import { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '@/app/store/useProjectStore';
 import type { Task } from '@/entities';
@@ -93,24 +94,30 @@ export function GridCell({
     setEditing_(true);
   }
 
-  function commit(): void {
+  /** Returns false when a typed date was rejected (the editor stays open). */
+  function commit(keepOpenOnError = false): boolean {
+    if (field === 'start' || field === 'end') {
+      const raw = draft.trim();
+      // Emptying the cell or leaving it unchanged is not an edit.
+      if (raw === '' || raw === displayValue(task, field)) { setEditing_(false); return true; }
+      const ok = useProjectStore.getState().editTaskDate(task.id, field, raw);
+      if (!ok && keepOpenOnError) {
+        // Keep the text so the user can fix it; select it for quick retyping.
+        setTimeout(() => inputRef.current?.select(), 0);
+        return false;
+      }
+      setEditing_(false);
+      return ok;
+    }
     setEditing_(false);
     if (field === 'name') {
       updateTask(task.id, { name: draft.trim() || task.name });
     } else if (field === 'progress') {
       const n = Math.max(0, Math.min(100, Number(draft) || 0));
       updateTask(task.id, { progress: n });
-    } else if (field === 'start' || field === 'end') {
-      const raw = draft.trim().replace(/\//g, '-');
-      // Accept both YYYY-MM-DD and YYYYMMDD
-      const normalized = /^\d{8}$/.test(raw)
-        ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`
-        : raw;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-        updateTask(task.id, { [field]: normalized });
-      }
     }
     if (field === 'name') setEditing(null);
+    return true;
   }
 
   function cancel(): void {
@@ -124,14 +131,15 @@ export function GridCell({
         ref={inputRef}
         value={draft}
         type={field === 'progress' ? 'number' : 'text'}
-        placeholder={field === 'start' || field === 'end' ? 'YYYY-MM-DD' : undefined}
-        inputMode={field === 'start' || field === 'end' ? 'numeric' : undefined}
+        placeholder={field === 'start' || field === 'end' ? '예: 20261130, 11/30' : undefined}
+        {...(field === 'start' || field === 'end'
+          ? tipProps('날짜 입력', '20261130 · 2026-11-30 · 2026.11.30 · 11/30(올해) · 오늘 처럼 입력하고 Enter. Esc는 취소.')
+          : {})}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
+        onBlur={() => { commit(); }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
-            commit();
-            onEditNavigate?.();
+            if (commit(true)) onEditNavigate?.();
           } else if (e.key === 'Escape') {
             cancel();
           }

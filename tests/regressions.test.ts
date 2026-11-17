@@ -203,7 +203,7 @@ describe('date edits behave like a bar drag', () => {
     expect(get('B').start).toBe('2026-01-26');
 
     // Typing a start earlier than the predecessor allows is adjusted, with a notice.
-    useProjectStore.getState().updateTask('B', { start: '2026-01-06' });
+    useProjectStore.getState().editTaskDate('B', 'start', '2026-01-06');
     expect(get('B').start).toBe('2026-01-26');
     expect(useProjectStore.getState().view.appToast?.msg).toContain('2026-01-26');
   });
