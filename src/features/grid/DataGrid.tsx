@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Ban, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Diamond, GripVertical, ListPlus, Lock, PanelLeftClose, PanelLeftOpen, RotateCcw } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
-import { buildVisibleRows, type VisibleRow } from './treeModel';
+import { buildVisibleRows, filterRowsByName, type VisibleRow } from './treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
 import { HEADER_HEIGHT, SCROLL_BOTTOM_PADDING } from '@/features/gantt/layout';
 import { cn } from '@/shared/ui/cn';
@@ -164,7 +164,8 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
 
   // --- state ---
   const [columns, setColumns]       = useState(DEFAULT_COLUMNS);
-  const [filter, setFilter]         = useState('');
+  const filter                      = useProjectStore((s) => s.view.nameFilter);
+  const setFilter                   = useProjectStore((s) => s.setNameFilter);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [contextMenu, setContextMenu]   = useState<{ x: number; y: number; taskId: string } | null>(null);
   const [groupSubmenuOpen, setGroupSubmenuOpen] = useState(false);
@@ -206,11 +207,7 @@ export function DataGrid({ width, scrollTop, onScrollTopChange }: DataGridProps)
   const visibleTasks = useVisibleTasks();
   const allRows = useMemo(() => buildVisibleRows(visibleTasks), [visibleTasks]);
   const hasParents  = useMemo(() => allRows.some((r) => r.hasChildren), [allRows]);
-  const rows = useMemo(() => {
-    if (!filter.trim()) return allRows;
-    const q = filter.trim().toLowerCase();
-    return allRows.filter((r) => r.task.name.toLowerCase().includes(q));
-  }, [allRows, filter]);
+  const rows = useMemo(() => filterRowsByName(allRows, filter), [allRows, filter]);
 
   // --- ref sync effects ---
   useEffect(() => { rowsRef.current = rows; },                       [rows]);

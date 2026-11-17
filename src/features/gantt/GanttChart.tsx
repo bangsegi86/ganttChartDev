@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import { AlignJustify, Minus, Plus } from 'lucide-react';
 import { useProjectStore } from '@/app/store/useProjectStore';
-import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
+import { buildVisibleRows, filterRowsByName, rowIndexMap } from '@/features/grid/treeModel';
 import { useVisibleTasks } from '@/features/view/viewFilter';
 import { buildTimeline } from './timeline';
 import { ZOOM_CONFIGS } from './zoom';
@@ -17,7 +17,7 @@ import {
 } from './renderGantt';
 import { HEADER_HEIGHT, RESIZE_HANDLE, SCROLL_BOTTOM_PADDING } from './layout';
 import type { BaselineEntry, Task, TaskId } from '@/entities';
-import { addDaysISO } from '@/shared/date/dateUtils';
+import { addDaysISO, todayISO } from '@/shared/date/dateUtils';
 
 type DragMode = 'move' | 'resize-start' | 'resize-end' | 'link' | 'pan' | null;
 
@@ -115,7 +115,12 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
   );
 
   const visibleTasks = useVisibleTasks();
-  const rows = useMemo(() => buildVisibleRows(visibleTasks), [visibleTasks]);
+  const nameFilter = useProjectStore((s) => s.view.nameFilter);
+  // Apply the grid's name search here too so both panes stay row-aligned.
+  const rows = useMemo(
+    () => filterRowsByName(buildVisibleRows(visibleTasks), nameFilter),
+    [visibleTasks, nameFilter],
+  );
   const rowIndex = useMemo(() => rowIndexMap(rows), [rows]);
   const timeline = useMemo(
     () => buildTimeline(visibleTasks, project.startDate, effectiveDayWidth),
@@ -256,7 +261,7 @@ export function GanttChart({ scrollTop, onScrollTopChange }: GanttChartProps) {
       selected,
       holidaySet: new Set(project.holidays.map((h) => h.date)),
       weekendDays: new Set([0, 6].filter((d) => !project.calendar.workingWeekdays.includes(d))),
-      today: new Date().toISOString().slice(0, 10),
+      today: todayISO(),
       showTodayLine: view.showTodayLine,
       showCritical: view.showCriticalPath,
       showBaseline: view.showBaseline,

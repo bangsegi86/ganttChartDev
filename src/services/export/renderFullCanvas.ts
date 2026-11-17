@@ -1,3 +1,4 @@
+import { todayISO } from '@/shared/date/dateUtils';
 import type { Project, TaskId, TaskSchedule, BaselineEntry } from '@/entities';
 import { buildVisibleRows, rowIndexMap } from '@/features/grid/treeModel';
 import { buildTimeline } from '@/features/gantt/timeline';
@@ -63,7 +64,7 @@ export function renderFullCanvas(input: FullRenderInput): HTMLCanvasElement {
     selected: new Set(),
     holidaySet: new Set(project.holidays.map((h) => h.date)),
     weekendDays: new Set([0, 6].filter((d) => !project.calendar.workingWeekdays.includes(d))),
-    today: new Date().toISOString().slice(0, 10),
+    today: todayISO(),
     showTodayLine: true,
     showCritical,
     showBaseline,

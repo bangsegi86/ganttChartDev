@@ -142,19 +142,37 @@ function rollUpParents(tasks: Task[], cal: WorkingCalendar): void {
   }
 
   // Process parents deepest-first so nested summaries aggregate correctly.
+  // Depths are memoised in one O(n) pass (previously the id map was rebuilt
+  // inside every comparator call, making this O(n² log n)).
+  const byId = new Map(tasks.map((x) => [x.id, x]));
+  const depthCache = new Map<TaskId, number>();
   const depth = (t: Task): number => {
-    let d = 0;
+    const cached = depthCache.get(t.id);
+    if (cached !== undefined) return cached;
+    // Walk up until a cached ancestor (or the root), guarding against cycles.
+    const chain: Task[] = [];
+    const seen = new Set<TaskId>();
     let cur: Task | undefined = t;
-    const byId = new Map(tasks.map((x) => [x.id, x]));
-    while (cur?.parentId) {
-      d++;
-      cur = byId.get(cur.parentId);
+    let base = 0;
+    while (cur && !seen.has(cur.id)) {
+      const c = depthCache.get(cur.id);
+      if (c !== undefined) { base = c; break; }
+      seen.add(cur.id);
+      chain.push(cur);
+      cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+      if (!cur) base = -1;
     }
-    return d;
+    for (let i = chain.length - 1; i >= 0; i--) {
+      base += 1;
+      depthCache.set(chain[i]!.id, base);
+    }
+    return depthCache.get(t.id) ?? 0;
   };
   const parents = tasks
     .filter((t) => childrenOf.has(t.id))
-    .sort((a, b) => depth(b) - depth(a));
+    .map((t) => ({ t, d: depth(t) }))
+    .sort((a, b) => b.d - a.d)
+    .map((x) => x.t);
 
   for (const parent of parents) {
     const kids = childrenOf.get(parent.id) ?? [];

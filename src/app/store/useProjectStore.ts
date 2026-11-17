@@ -17,7 +17,7 @@ import { recalc, type DerivedSchedule } from './recalc';
 import { wouldCreateCycle } from '@/services/dependency/graph';
 import { autosaveRepository } from '@/services/persistence/projectRepository';
 import { bridge } from '@/shared/bridge';
-import { addDaysISO, diffDaysISO } from '@/shared/date/dateUtils';
+import { addDaysISO, diffDaysISO, todayISO } from '@/shared/date/dateUtils';
 import type { ZoomLevel } from '@/features/gantt/zoom';
 import { stepZoom } from '@/features/gantt/zoom';
 import { DEFAULT_ROW_HEIGHT } from '@/features/gantt/layout';
@@ -51,6 +51,8 @@ interface ViewState {
   dayWidthScale: number;
   /** Pixel height of each task row. Controls the vertical spacing between bars. */
   rowHeight: number;
+  /** Task-name search text. Applied to grid AND gantt so their rows stay aligned. */
+  nameFilter: string;
   /**
    * One-shot scroll request for the gantt: when non-null the GanttChart will
    * scroll so this ISO date is near the left edge of the viewport, then clear
@@ -213,6 +215,8 @@ interface ProjectStore {
   setDayWidthScale: (scale: number) => void;
   /** Set the row height in pixels. Clamped to [20, 80]. */
   setRowHeight: (height: number) => void;
+  /** Set the task-name search text shared by the grid and gantt. */
+  setNameFilter: (text: string) => void;
   /**
    * Sort the direct children of the given task by their start date (ascending).
    * Sibling order values are reassigned; the subtrees themselves are untouched.
@@ -235,7 +239,7 @@ function emptyProject(): Project {
     schemaVersion: 1,
     id: nanoid(8),
     name: '새 프로젝트',
-    startDate: new Date().toISOString().slice(0, 10),
+    startDate: todayISO(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     calendar: { workingWeekdays: [1, 2, 3, 4, 5], excludeHolidays: true, mode: 'working', hoursPerDay: 8 },
@@ -296,9 +300,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     scheduleAutosave();
   }
 
+  /**
+   * Throttled autosave: the first unsaved edit arms a timer and later edits do
+   * not reset it, so continuous editing is still snapshotted at least once per
+   * interval. (A debounce here meant nothing was saved while the user kept
+   * editing more often than once a minute.)
+   */
   function scheduleAutosave(): void {
-    if (autosaveTimer) clearTimeout(autosaveTimer);
+    if (autosaveTimer) return;
     autosaveTimer = setTimeout(() => {
+      autosaveTimer = null;
       void get().flushAutosave();
     }, AUTOSAVE_INTERVAL_MS);
   }
@@ -332,6 +343,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
       filterAssigneeIds: [],
       dayWidthScale: 1.0,
       rowHeight: DEFAULT_ROW_HEIGHT,
+      nameFilter: '',
       ganttScrollTo: null,
       appToast: null,
     },
@@ -405,6 +417,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
 
     async flushAutosave() {
+      // Nothing to recover if the document was saved since the timer was armed;
+      // writing anyway would raise a false recovery banner on next launch.
+      if (!get().dirty) return;
       await autosaveRepository.write(get().derived.project);
     },
 
@@ -1329,6 +1344,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     },
     setRowHeight(height) {
       set((s) => ({ view: { ...s.view, rowHeight: Math.max(20, Math.min(80, Math.round(height))) } }));
+    },
+
+    setNameFilter(text) {
+      set((s) => ({ view: { ...s.view, nameFilter: text } }));
     },
 
     sortChildrenByStart(parentId) {

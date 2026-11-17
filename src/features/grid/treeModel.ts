@@ -55,3 +55,18 @@ export function rowIndexMap(rows: VisibleRow[]): Map<TaskId, number> {
   rows.forEach((r) => map.set(r.task.id, r.index));
   return map;
 }
+
+/**
+ * Keep only rows whose task name contains `query` (case-insensitive) and
+ * re-number `index` so it matches the filtered position. Shared by the grid and
+ * the gantt so both panes draw the same rows at the same y-offsets.
+ */
+export function filterRowsByName(rows: VisibleRow[], query: string): VisibleRow[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return rows;
+  const out: VisibleRow[] = [];
+  for (const r of rows) {
+    if (r.task.name.toLowerCase().includes(q)) out.push({ ...r, index: out.length });
+  }
+  return out;
+}
