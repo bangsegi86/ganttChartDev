@@ -3,7 +3,8 @@
 export type { Task, TaskId, TaskSchedule, Priority, ConstraintType } from './task/types';
 export type { Dependency, DependencyId, DependencyType } from './dependency/types';
 export type { Resource, ResourceId } from './resource/types';
-export type { Holiday } from './holiday/types';
+export type { Holiday, HolidayKind } from './holiday/types';
+export { HOLIDAY_KIND_LABEL, holidayKind, makeHoliday } from './holiday/types';
 export type { WorkCalendar } from './calendar/types';
 export { DEFAULT_CALENDAR } from './calendar/types';
 export type { Baseline, BaselineEntry } from './baseline/types';

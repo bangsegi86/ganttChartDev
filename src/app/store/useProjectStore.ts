@@ -183,6 +183,10 @@ interface ProjectStore {
   removeResource: (id: string) => void;
   upsertHoliday: (holiday: Holiday) => void;
   removeHoliday: (date: string) => void;
+  /** Add or replace many holidays (matched by date) as one undo step. */
+  importHolidays: (holidays: Holiday[]) => { added: number; updated: number };
+  /** Remove many holidays as one undo step. */
+  removeHolidays: (dates: string[]) => void;
   setCalendar: (patch: Partial<WorkCalendar>) => void;
 
   // --- baselines ---
@@ -1402,6 +1406,27 @@ export const useProjectStore = create<ProjectStore>((set, get) => {
     removeHoliday(date) {
       commit((d) => {
         d.holidays = d.holidays.filter((h) => h.date !== date);
+      });
+    },
+
+    importHolidays(list) {
+      let added = 0;
+      let updated = 0;
+      commit((d) => {
+        const byDate = new Map(d.holidays.map((h) => [h.date, h]));
+        for (const h of list) {
+          if (byDate.has(h.date)) updated++; else added++;
+          byDate.set(h.date, h);
+        }
+        d.holidays = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+      });
+      return { added, updated };
+    },
+
+    removeHolidays(dates) {
+      const drop = new Set(dates);
+      commit((d) => {
+        d.holidays = d.holidays.filter((h) => !drop.has(h.date));
       });
     },
 
