@@ -67,6 +67,8 @@ export function ChoiceDialogHost() {
 
   if (!request) return null;
   const firstPrimary = request.options.findIndex((o) => o.primary);
+  // One or two short choices without explanations sit on one line with cancel.
+  const compact = request.options.length <= 2 && request.options.every((o) => !o.hint);
 
   return (
     <div
@@ -83,26 +85,49 @@ export function ChoiceDialogHost() {
       >
         <h2 id="choice-title" className="text-sm font-semibold text-content">{request.title}</h2>
         <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-content-muted">{request.message}</p>
-        <div className="mt-4 flex flex-col gap-2">
-          {request.options.map((o, i) => (
-            <button
-              key={o.value}
-              ref={i === (firstPrimary >= 0 ? firstPrimary : 0) ? primaryRef : undefined}
-              onClick={() => answer(o.value)}
-              className={`rounded-lg border px-3 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-accent/60 ${
-                o.primary
-                  ? 'border-accent/50 bg-accent/10 hover:bg-accent/15'
-                  : 'border-border bg-surface hover:bg-surface-3'
-              }`}
-            >
-              <div className={`text-xs font-semibold ${o.primary ? 'text-accent' : 'text-content'}`}>{o.label}</div>
-              {o.hint && <div className="mt-0.5 text-2xs text-content-muted">{o.hint}</div>}
-            </button>
-          ))}
-        </div>
-        <div className="mt-4 flex justify-end">
-          <Button size="sm" onClick={() => answer(null)}>{request.cancelLabel ?? '취소'}</Button>
-        </div>
+        {compact ? (
+          // Simple yes/no: cancel and the action side by side, action on the right.
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <Button size="sm" onClick={() => answer(null)} className="h-8 px-4">{request.cancelLabel ?? '취소'}</Button>
+            {request.options.map((o, i) => (
+              <button
+                key={o.value}
+                ref={i === (firstPrimary >= 0 ? firstPrimary : 0) ? primaryRef : undefined}
+                onClick={() => answer(o.value)}
+                className={`h-8 whitespace-nowrap rounded-md px-4 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-accent/60 ${
+                  o.primary
+                    ? 'bg-accent text-accent-fg hover:opacity-90'
+                    : 'border border-border bg-surface text-content hover:bg-surface-3'
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 flex flex-col gap-2">
+              {request.options.map((o, i) => (
+                <button
+                  key={o.value}
+                  ref={i === (firstPrimary >= 0 ? firstPrimary : 0) ? primaryRef : undefined}
+                  onClick={() => answer(o.value)}
+                  className={`rounded-lg border px-3 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-accent/60 ${
+                    o.primary
+                      ? 'border-accent/50 bg-accent/10 hover:bg-accent/15'
+                      : 'border-border bg-surface hover:bg-surface-3'
+                  }`}
+                >
+                  <div className={`whitespace-normal text-xs font-semibold [word-break:keep-all] ${o.primary ? 'text-accent' : 'text-content'}`}>{o.label}</div>
+                  {o.hint && <div className="mt-0.5 whitespace-normal text-2xs text-content-muted [word-break:keep-all]">{o.hint}</div>}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button size="sm" onClick={() => answer(null)}>{request.cancelLabel ?? '취소'}</Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
