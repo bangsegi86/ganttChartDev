@@ -328,3 +328,13 @@ describe('paste helpers: transact + appendBlankTasks', () => {
     expect(after.find((t) => t.id === 'b')!.name).toBe('b');
   });
 });
+
+describe('resources from older or hand-edited files', () => {
+  it('fills missing role, colour and hours so editing them cannot crash', async () => {
+    const { normalizeProject } = await import('@/app/store/normalizeProject');
+    const p = normalizeProject({ tasks: [], resources: [{ id: 'r1', name: '홍길동' }, { capacityHoursPerDay: 99 }] });
+    expect(p.resources[0]).toMatchObject({ id: 'r1', name: '홍길동', role: '', capacityHoursPerDay: 8 });
+    expect(p.resources[0]!.color).toMatch(/^#/);
+    expect(p.resources[1]).toMatchObject({ name: '담당자 2', capacityHoursPerDay: 24 });
+  });
+});

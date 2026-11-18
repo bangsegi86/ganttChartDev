@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import type { Dependency, Project, Task } from '@/entities';
+import type { Dependency, Project, Resource, Task } from '@/entities';
 import { PROJECT_SCHEMA_VERSION } from '@/entities';
 import { todayISO } from '@/shared/date/dateUtils';
 
@@ -106,7 +106,16 @@ export function normalizeProject(raw: unknown): Project {
     },
     tasks,
     dependencies,
-    resources: arr(p.resources),
+    resources: arr<Partial<Resource>>(p.resources)
+      .filter((r) => r && typeof r === 'object')
+      .map((r, i) => ({
+        ...r,
+        id: typeof r.id === 'string' && r.id ? r.id : nanoid(8),
+        name: typeof r.name === 'string' && r.name.trim() ? r.name : `담당자 ${i + 1}`,
+        role: typeof r.role === 'string' ? r.role : '',
+        color: typeof r.color === 'string' && r.color ? r.color : '#2F6FEB',
+        capacityHoursPerDay: Math.min(24, Math.max(0.5, num(r.capacityHoursPerDay, 8))),
+      })),
     holidays: arr<{ date?: unknown }>(p.holidays).filter((h) => h && isDay(h.date)) as Project['holidays'],
     baselines: arr(p.baselines),
     activeBaselineId: typeof p.activeBaselineId === 'string' ? p.activeBaselineId : null,
